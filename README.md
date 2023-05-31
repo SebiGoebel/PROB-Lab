@@ -12,6 +12,12 @@ rosrun gmapping slam_gmapping
 
 Zum speichern einer Map:
 (speichert eine Map dort wo ich gerade im terminal bin)
-  ```bash
-rosrun map_server map_saver -f <dateiname>
+(wirft ein map.yaml und ein map.png aus)
+```bash
+rosrun map_server map_saver -f <*dateiname*>
+```
+
+Zum Beispiel:
+```bash
+rosrun map_server map_saver -f map
 ```
