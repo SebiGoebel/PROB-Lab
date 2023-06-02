@@ -16,7 +16,7 @@ Zum speichern einer Map:
 
 (wirft ein map.yaml und ein map.png aus)
 ```bash
-rosrun map_server map_saver -f <**dateiname**>
+rosrun map_server map_saver -f <dateiname>
 ```
 
 Zum Beispiel:
