@@ -5,6 +5,8 @@
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_broadcaster.h>
+#include <geometry_msgs/PoseArray.h>
+#include <geometry_msgs/Pose.h>
 #include <random>
 #include <cmath>
 
@@ -19,6 +21,11 @@
 
 #define normalTriangularDistribution true // decides which distribution should be taken
                                           // [true --> normal distribution; false --> triangular distribution]
+
+#define initialX 0.5
+#define initialY 0.5
+#define initialTH 0.0
+
 
 
 // ================= random distributions =================
@@ -88,8 +95,32 @@ struct U_t{
 };
 
 struct Z_t{
-    //code
+    double laserScan[360];
 };
+
+struct Odom{
+    double x;
+    double y;
+    double th;
+};
+
+// ================= sampleToPose =================
+
+geometry_msgs::Pose sample2Pose(Sample sample){
+    geometry_msgs::Pose pose;
+
+    // position
+    pose.position.x = sample.x;
+    pose.position.y = sample.y;
+    pose.position.z = 0.0;
+
+    // orientation
+    //tf::Quaternion quaternions;
+    //quaternions.setRPY(0, 0, sample.th);
+    pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, sample.th);
+
+    return pose;
+}
 
 // ========================================== Filter-CLASS ==========================================
 
@@ -97,82 +128,99 @@ class Filter
 {
 public:
     // Konstruktoren
+    Filter();
 
     // Methoden
     void predict();
     void correct();
-    Sample sample_motion_model(double v, double w, double x, double y, double th, double dt);
+    //Sample sample_motion_model(double v, double w, double x, double y, double th, double dt);
+    Sample sample_motion_model_Structs(U_t u_t, Odom odom, double dt);
     void likelihood_field_range_finder_model();
     void resampling();
 
     void algorithmMCL();
 
+    void callback_cmd_vel(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg);
+    void callback_odom(const nav_msgs::Odometry::ConstPtr& odom_msg);
+
     // setter + getter
-    void setX_odom(double x)
-    {
-        this->x_odom = x;
+    void setOdom(const Odom& odom){
+        this->odom_ = odom;
     }
 
-    double getX_odom() const
-    {
-        return x_odom;
+    Odom getOdom() const {
+        return this->odom_;
     }
 
-    void setY_odom(double y)
-    {
-        this->y_odom = y;
+    void setU_t(const U_t& u_t){
+        this->motion_model_ = u_t;
     }
 
-    double getY_odom() const
-    {
-        return y_odom;
+    U_t getU_t() const {
+        return this->motion_model_;
     }
 
-    void setTh_odom(double th)
-    {
-        this->th_odom = th;
+    void setZ_t(Z_t z_t){
+        this->sensor_model_ = z_t;
     }
 
-    double getTh_odom() const
-    {
-        return th_odom;
-    }
-
-    void setV_cmd_vel(double v)
-    {
-        this->v_cmd_vel = v;
-    }
-
-    double getV_cmd_vel() const
-    {
-        return v_cmd_vel;
-    }
-
-    void setW_cmd_vel(double w)
-    {
-        this->w_cmd_vel = w;
-    }
-
-    double getW_cmd_vel() const
-    {
-        return w_cmd_vel;
+    Z_t getZ_t() const {
+        return this->sensor_model_;
     }
 
 private:
-    double x_odom = 0.0;
-    double y_odom = 0.0;
-    double th_odom = 0.0;
-    double v_cmd_vel = 0.0;
-    double w_cmd_vel = 0.0;
+    //double x_odom = 0.0;
+    //double y_odom = 0.0;
+    //double th_odom = 0.0;
+    //double v_cmd_vel = 0.0;
+    //double w_cmd_vel = 0.0;
 
-    double pose_x = 0.0;
-    double pose_y = 0.0;
-    double pose_th = 0.0;
+    double pose_x_ = 0.0;
+    double pose_y_ = 0.0;
+    double pose_th_ = 0.0;
 
-    Sample samples[100];
-    U_t motion_model;
-    Z_t sensor_model;
+    Sample samples_old_[anzSamples];
+    //Sample samples_predicted_[anzSamples];
+    //Sample samples_corrected_[anzSamples];
+    U_t motion_model_;
+    Z_t sensor_model_;
+    Odom odom_;
 };
+
+Filter::Filter(){
+    Odom o_default;
+    o_default.x = initialX;
+    o_default.y = initialY;
+    o_default.th = initialTH;
+    this->odom_ = o_default;
+
+    this->pose_x_ = initialX;
+    this->pose_y_ = initialY;
+    this->pose_th_ = initialTH;
+
+    U_t motion_model_default;
+    motion_model_default.v = 0.0;
+    motion_model_default.w = 0.0;
+    this->motion_model_ = motion_model_default;
+
+    Sample sample_default;
+    sample_default.x = 0.0;
+    sample_default.y = 0.0;
+    sample_default.th = 0.0;
+    sample_default.weight = 0.0;
+
+    for(int i = 0; i < anzSamples; i++){
+        this->samples_old_[i] = sample_default;
+        //this->samples_predicted_[i] = sample_default;
+        //this->samples_corrected_[i] = sample_default;
+    }
+
+    for(int i = 0; i < anzSamples; i++){
+        this->sensor_model_.laserScan[i] = 0.0;
+    }
+
+    std::cout << "initials set" << std::endl;
+}
 
 void Filter::predict()
 {
@@ -191,6 +239,7 @@ void Filter::correct()
     }
 }
 
+/*
 Sample Filter::sample_motion_model(double v, double w, double x, double y, double th, double dt)
 {
     // preparing Input for sampling()
@@ -216,6 +265,33 @@ Sample Filter::sample_motion_model(double v, double w, double x, double y, doubl
     s1.th = th_;
     return s1;
 }
+*/
+
+Sample Filter::sample_motion_model_Structs(U_t u_t, Odom odom, double dt)
+{
+    // preparing Input for sampling()
+    double absV = abs(u_t.v);
+    double absW = abs(u_t.w);
+
+    double variance1 = alpha_1 * absV + alpha_2 * absW;
+    double variance2 = alpha_3 * absV + alpha_4 * absW;
+    double variance3 = alpha_5 * absV + alpha_6 * absW;
+    
+    // motion model
+    double v_hat = u_t.v + sampling(variance1);
+    double w_hat = u_t.w + sampling(variance2);
+    double th_hilf = sampling(variance3);
+    double x_ = odom.x - ((v_hat/w_hat) * sin(odom.th)) + ((v_hat/w_hat) * sin(odom.th + w_hat * dt));
+    double y_ = odom.y + ((v_hat/w_hat) * cos(odom.th)) - ((v_hat/w_hat) * sin(odom.th + w_hat * dt));
+    double th_ = odom.th + w_hat * dt + th_hilf * dt;
+
+    // speichern in Sample-struct und return
+    Sample s1;
+    s1.x = x_;
+    s1.y = y_;
+    s1.th = th_;
+    return s1;
+}
 
 void Filter::likelihood_field_range_finder_model()
 {
@@ -228,14 +304,34 @@ void Filter::resampling()
 }
 
 void Filter::algorithmMCL(){
-    //code
+    Sample samples[anzSamples];
+    Sample samples_new[anzSamples];
+    for(int i = 0; i < anzSamples; i++){
+        //samples[i] = sample_motion_model_Structs(this->motion_model_, this->odom_, dt);
+    }
 }
 
+void Filter::callback_cmd_vel(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg){
 
+    this->motion_model_.v = cmd_vel_msg->linear.x;
+    this->motion_model_.w = cmd_vel_msg->angular.z;
 
+    // test print
+    //std::cout << "test  V: " << this->motion_model_.v << ", W: " << this->motion_model_.w << std::endl;
+}
+
+void Filter::callback_odom(const nav_msgs::Odometry::ConstPtr& odom_msg){
+
+    this->odom_.th=tf::getYaw(odom_msg->pose.pose.orientation);
+	this->odom_.x=odom_msg->pose.pose.position.x;
+	this->odom_.y=odom_msg->pose.pose.position.y;
+    
+    // test print
+    //std::cout << "X: " << this->odom_.x << ", Y: " << this->odom_.y << ", TH: " << this->odom_.th << std::endl;
+}
 
 // ========================================== cmd_vel listener ==========================================
-
+/*
 void cmd_velCallback(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg)
 {
     // linear
@@ -251,24 +347,38 @@ void cmd_velCallback(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg)
     //ROS_INFO("I heard linear:  [%f, %f, %f]", linear_x, linear_y, linear_z);
     //ROS_INFO("I heard angular: [%f, %f, %f]", angular_x, angular_y, angular_z);
     ROS_INFO("I heard motion command(u_t = (v w)^T): [%f, %f]", linear_x, angular_z);
-
-
-    Filter filter;
-
-    filter.setV_cmd_vel(linear_x);
-    filter.setW_cmd_vel(angular_z);
 }
+*/
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "particle_filter");
+    Filter filter;
 
+    ros::init(argc, argv, "particle_filter");
     ros::NodeHandle n;
 
-    ros::Subscriber sub_cmd_vel = n.subscribe("cmd_vel", 1000, cmd_velCallback);
+    // subscribers
+    //ros::Subscriber sub_cmd_vel = n.subscribe("cmd_vel", 1000, cmd_velCallback);
     //ros::Subscriber sub_odom = n.subscribe("odom", 1000, chatterCallback);
+    ros::Subscriber sub_cmd_vel = n.subscribe("cmd_vel", 1000, &Filter::callback_cmd_vel, &filter);
+    ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom, &filter);
 
-    ros::spin();
+    // publisher
+    ros::Publisher pub_particle_cloud = n.advertise<geometry_msgs::PoseArray>("/particlecloud", 1000);
+    geometry_msgs::PoseArray sample_poses;
+
+    ros::Rate loop_rate(10); // updating with 10 Hz
+
+    while(n.ok())
+	{
+		ros::spinOnce(); 
+			
+        std::cout << "Final X: " << filter.getOdom().x << ", Y: " << filter.getOdom().y << ", TH: " << filter.getOdom().th << std::endl;
+        std::cout << "      V: " << filter.getU_t().v << ", W: " << filter.getU_t().w << std::endl;
+
+    	loop_rate.sleep();
+   	}
+
 
     return 0;
 }
