@@ -1,7 +1,7 @@
 # PROB-Lab
 
 
-## um eine Karte zu erstellen
+## kurze Anleitung um eine Karte zu erstellen
 
 1. gazebo und rviz öffnen (in rviz alle relevanten topics anzeigen lassen)
 
