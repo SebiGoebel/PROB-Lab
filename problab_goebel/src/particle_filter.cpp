@@ -160,7 +160,7 @@ public:
         return this->motion_model_;
     }
 
-    void setZ_t(Z_t z_t){
+    void setZ_t(const Z_t& z_t){
         this->sensor_model_ = z_t;
     }
 
