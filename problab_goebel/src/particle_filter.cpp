@@ -122,6 +122,11 @@ geometry_msgs::Pose sample2Pose(Sample sample){
     return pose;
 }
 
+double convertingTime2Double(ros::Time time){
+    double time_in_double = time.toSec(); // converting ros::Time to a double value in seconds
+    return time_in_double;
+}
+
 // ========================================== Filter-CLASS ==========================================
 
 class Filter
@@ -135,6 +140,7 @@ public:
     void correct();
     //Sample sample_motion_model(double v, double w, double x, double y, double th, double dt);
     Sample sample_motion_model_Structs(U_t u_t, Odom odom, double dt);
+    Sample sample_motion_model_this();
     void likelihood_field_range_finder_model();
     void resampling();
 
@@ -168,6 +174,26 @@ public:
         return this->sensor_model_;
     }
 
+    void setTime_stamp_old(const double& time_stamp){
+        this->time_stamp_old_ = time_stamp;
+    }
+
+    double getTime_stamp_old() const {
+        return this->time_stamp_old_;
+    }
+
+    void setDt(const double& dt){
+        this->dt_ = dt;
+    }
+
+    double getDt() const {
+        return this->dt_;
+    }
+
+    void updateDt(ros::Time timeNow){
+        this->dt_ = convertingTime2Double(timeNow) - this->time_stamp_old_;
+    }
+
 private:
     //double x_odom = 0.0;
     //double y_odom = 0.0;
@@ -185,6 +211,8 @@ private:
     U_t motion_model_;
     Z_t sensor_model_;
     Odom odom_;
+    double time_stamp_old_;
+    double dt_;
 };
 
 Filter::Filter(){
@@ -218,6 +246,9 @@ Filter::Filter(){
     for(int i = 0; i < anzSamples; i++){
         this->sensor_model_.laserScan[i] = 0.0;
     }
+
+    this->time_stamp_old_ = 0.0;
+    this->dt_ = 0.0;
 
     std::cout << "initials set" << std::endl;
 }
@@ -284,6 +315,32 @@ Sample Filter::sample_motion_model_Structs(U_t u_t, Odom odom, double dt)
     double x_ = odom.x - ((v_hat/w_hat) * sin(odom.th)) + ((v_hat/w_hat) * sin(odom.th + w_hat * dt));
     double y_ = odom.y + ((v_hat/w_hat) * cos(odom.th)) - ((v_hat/w_hat) * sin(odom.th + w_hat * dt));
     double th_ = odom.th + w_hat * dt + th_hilf * dt;
+
+    // speichern in Sample-struct und return
+    Sample s1;
+    s1.x = x_;
+    s1.y = y_;
+    s1.th = th_;
+    return s1;
+}
+
+Sample Filter::sample_motion_model_this()
+{
+    // preparing Input for sampling()
+    double absV = abs(this->motion_model_.v);
+    double absW = abs(this->motion_model_.w);
+
+    double variance1 = alpha_1 * absV + alpha_2 * absW;
+    double variance2 = alpha_3 * absV + alpha_4 * absW;
+    double variance3 = alpha_5 * absV + alpha_6 * absW;
+    
+    // motion model
+    double v_hat = this->motion_model_.v + sampling(variance1);
+    double w_hat = this->motion_model_.w + sampling(variance2);
+    double th_hilf = sampling(variance3);
+    double x_ = this->odom_.x - ((v_hat/w_hat) * sin(this->odom_.th)) + ((v_hat/w_hat) * sin(this->odom_.th + w_hat * this->dt_));
+    double y_ = this->odom_.y + ((v_hat/w_hat) * cos(this->odom_.th)) - ((v_hat/w_hat) * sin(this->odom_.th + w_hat * this->dt_));
+    double th_ = this->odom_.th + w_hat * this->dt_ + th_hilf * this->dt_;
 
     // speichern in Sample-struct und return
     Sample s1;
@@ -364,17 +421,53 @@ int main(int argc, char **argv)
     ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom, &filter);
 
     // publisher
-    ros::Publisher pub_particle_cloud = n.advertise<geometry_msgs::PoseArray>("/particlecloud", 1000);
+    ros::Publisher pub_particle_cloud = n.advertise<geometry_msgs::PoseArray>("/particlecloud", 10);
     geometry_msgs::PoseArray sample_poses;
+    sample_poses.header.frame_id = "map"; // setzen des fram_ids auf map
+
+    // 3 hard coded test poses
+    geometry_msgs::Pose pose1;
+    pose1.position.x = 1.0;
+    pose1.position.y = 2.0;
+    pose1.position.z = 0.0;
+
+    geometry_msgs::Pose pose2;
+    pose2.position.x = -1.0;
+    pose2.position.y = 0.0;
+    pose2.position.z = 0.0;
+
+    geometry_msgs::Pose pose3;
+    pose3.position.x = 3.0;
+    pose3.position.y = -2.0;
+    pose3.position.z = 0.0;
+
+    
+    sample_poses.poses.push_back(pose1);
+    sample_poses.poses.push_back(pose2);
+    sample_poses.poses.push_back(pose3);
 
     ros::Rate loop_rate(10); // updating with 10 Hz
+    double time = 0.0;
 
     while(n.ok())
 	{
-		ros::spinOnce(); 
-			
+		ros::spinOnce();
+        
+        // setting time stamp
+        ros::Time time = ros::Time::now();
+        sample_poses.header.stamp = time;
+
+        filter.updateDt(time);
+        filter.setTime_stamp_old(convertingTime2Double(time));
+
+
+        //test prints
+        std::cout << "Time: " << filter.getDt() << std::endl;
         std::cout << "Final X: " << filter.getOdom().x << ", Y: " << filter.getOdom().y << ", TH: " << filter.getOdom().th << std::endl;
         std::cout << "      V: " << filter.getU_t().v << ", W: " << filter.getU_t().w << std::endl;
+
+        //publishing sample poses
+        pub_particle_cloud.publish(sample_poses);
 
     	loop_rate.sleep();
    	}

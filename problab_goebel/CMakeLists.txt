@@ -212,6 +212,12 @@ include_directories(
 add_executable(testNode src/testNode.cpp)
 target_link_libraries(testNode ${catkin_LIBRARIES})
 
+add_executable(test2Node src/test2Node.cpp)
+target_link_libraries(test2Node ${catkin_LIBRARIES})
+
+add_executable(test3Node src/test3Node.cpp)
+target_link_libraries(test3Node ${catkin_LIBRARIES})
+
 add_executable(goal_pub src/goal_pub.cpp)
 target_link_libraries(goal_pub ${catkin_LIBRARIES})
 #add_dependencies(goal_pub problab_goebel_generate_messages_cpp)

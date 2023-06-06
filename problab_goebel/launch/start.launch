@@ -17,7 +17,10 @@
     <!-- laden der aufgenommenen map in rviz -->
     <node pkg="map_server" name="map_server" type="map_server" args="$(find problab_goebel)/maps/mymap.yaml"/>
 
+    <!-- laden des roboters in die map-->
+    <node pkg="tf" type="static_transform_publisher" name="tf_map_odom" args="0 0 0 0 0 0 1 map odom 100"/>
 
+<!--
    <node pkg="amcl" type="amcl" name="amcl">
     <param name="min_particles"             value="500"/>
     <param name="max_particles"             value="3000"/>
@@ -53,7 +56,7 @@
     <param name="odom_frame_id"             value="odom"/>
     <param name="base_frame_id"             value="base_footprint"/>
   </node>
-
+-->
 
     <include file="$(find problab_goebel)/launch/move_base.launch"/>
 
