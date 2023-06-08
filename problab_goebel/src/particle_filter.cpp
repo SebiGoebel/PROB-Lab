@@ -11,7 +11,7 @@
 #include <cmath>
 
 //Hyperparameter
-#define anzSamples 3
+#define anzSamples 100
 #define alpha_1 0.8
 #define alpha_2 0.2
 #define alpha_3 0.2
@@ -487,6 +487,9 @@ int main(int argc, char **argv)
         // calculating dt
         filter.updateDt(time);
         filter.setTime_stamp_old(convertingTime2Double(time));
+
+        // clearing pose array
+        sample_poses.poses.clear();
 
         // MCL Angorithm
         filter.algorithmMCL();
