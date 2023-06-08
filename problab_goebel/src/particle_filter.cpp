@@ -7,6 +7,7 @@
 #include <tf/transform_broadcaster.h>
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/Pose.h>
+#include <sensor_msgs/LaserScan.h>
 #include <random>
 #include <cmath>
 
@@ -25,6 +26,8 @@
 #define initialX 0.5
 #define initialY 0.5
 #define initialTH 0.0
+
+double laserMaxRange = 0.0;
 
 
 
@@ -95,7 +98,8 @@ struct U_t{
 };
 
 struct Z_t{
-    double laserScan[360];
+    //double laserScan[360];
+    std::vector<float> laserScan;
 };
 
 struct Odom{
@@ -147,8 +151,10 @@ public:
 
     void algorithmMCL();
 
+    // callback funktionen
     void callback_cmd_vel(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg);
     void callback_odom(const nav_msgs::Odometry::ConstPtr& odom_msg);
+    void callback_laser(const sensor_msgs::LaserScan::ConstPtr& laser_msg);
 
     // setter + getter
     void setOdom(const Odom& odom){
@@ -245,9 +251,9 @@ Filter::Filter(){
         //this->samples_corrected_[i] = sample_default;
     }
 
-    for(int i = 0; i < anzSamples; i++){
-        this->sensor_model_.laserScan[i] = 0.0;
-    }
+    //for(int i = 0; i < anzSamples; i++){
+    //    this->sensor_model_.laserScan.push_back(0.0);
+    //}
 
     this->time_stamp_old_ = 0.0;
     this->dt_ = 0.0;
@@ -313,6 +319,7 @@ Sample Filter::sample_motion_model_Structs(U_t u_t, Sample sample_old, double dt
     return s1;
 }
 
+// für ein sample
 Sample Filter::sample_motion_model_this(Sample sample_old)
 {
     // preparing Input for sampling()
@@ -328,8 +335,8 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
     double w_hat = this->motion_model_.w + sampling(variance2);
     double th_hilf = sampling(variance3);
 
-    std::cout << "---" << std::endl;
-    std::cout << "test: v_hat: " << v_hat << ", w_hat: " << w_hat << ", th_hilf: " << (th_hilf*180/M_PI) << std::endl;
+    //std::cout << "---" << std::endl;
+    //std::cout << "test: v_hat: " << v_hat << ", w_hat: " << w_hat << ", th_hilf: " << (th_hilf*180/M_PI) << std::endl;
 
     if(w_hat == 0.0 || v_hat == 0.0 || th_hilf == 0.0){
         return sample_old;
@@ -339,7 +346,7 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
     double y_ = sample_old.y + ((v_hat/w_hat) * cos(sample_old.th)) - ((v_hat/w_hat) * cos(sample_old.th + w_hat * this->dt_));
     double th_ = sample_old.th + w_hat * this->dt_ + th_hilf * this->dt_;
 
-    std::cout << "test: x_: " << x_ << ", y_: " << y_ << ", th_: " << (th_*180/M_PI) << std::endl;
+    //std::cout << "test: x_: " << x_ << ", y_: " << y_ << ", th_: " << (th_*180/M_PI) << std::endl;
     
 
     // speichern in Sample-struct und return
@@ -351,9 +358,13 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
     return s1;
 }
 
+// für ein sample
 double Filter::likelihood_field_range_finder_model()
 {
-    // code
+    double probability = 1.0;
+    for(int i = 0; i < anzSamples; i++){
+        //code
+    }
     return 0;
 }
 
@@ -400,12 +411,25 @@ void Filter::callback_cmd_vel(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg)
 
 void Filter::callback_odom(const nav_msgs::Odometry::ConstPtr& odom_msg){
 
-    this->odom_.th=tf::getYaw(odom_msg->pose.pose.orientation);
-	this->odom_.x=odom_msg->pose.pose.position.x;
-	this->odom_.y=odom_msg->pose.pose.position.y;
+    this->odom_.th = tf::getYaw(odom_msg->pose.pose.orientation);
+	this->odom_.x = odom_msg->pose.pose.position.x;
+	this->odom_.y = odom_msg->pose.pose.position.y;
     
     // test print
     //std::cout << "X: " << this->odom_.x << ", Y: " << this->odom_.y << ", TH: " << this->odom_.th << std::endl;
+}
+
+void Filter::callback_laser(const sensor_msgs::LaserScan::ConstPtr& laser_msg){
+
+	laserMaxRange = laser_msg->range_max;
+    this->sensor_model_.laserScan = laser_msg->ranges;
+    
+    // test print
+    //std::cout << "laserMax: " << laserMaxRange << std::endl;
+    //for(int i = 0; i < this->sensor_model_.laserScan.size(); i++){
+    //    std::cout << "range " << i << ": " << this->sensor_model_.laserScan[i] << std::endl;
+    //}
+    //std::cout << "size: " << this->sensor_model_.laserScan.size() << std::endl;
 }
 
 // ========================================== cmd_vel listener ==========================================
@@ -430,47 +454,30 @@ void cmd_velCallback(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg)
 
 int main(int argc, char **argv)
 {
+    
     Filter filter;
 
     ros::init(argc, argv, "particle_filter");
     ros::NodeHandle n;
+
+    
 
     // subscribers
     //ros::Subscriber sub_cmd_vel = n.subscribe("cmd_vel", 1000, cmd_velCallback);
     //ros::Subscriber sub_odom = n.subscribe("odom", 1000, chatterCallback);
     ros::Subscriber sub_cmd_vel = n.subscribe("cmd_vel", 1000, &Filter::callback_cmd_vel, &filter);
     ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom, &filter);
+    ros::Subscriber sub_laser = n.subscribe("scan", 1000, &Filter::callback_laser, &filter);
 
     // publisher
     ros::Publisher pub_particle_cloud = n.advertise<geometry_msgs::PoseArray>("/particlecloud", 10);
-    geometry_msgs::PoseArray sample_poses;
+    
+    // Messages
+    geometry_msgs::PoseArray sample_poses; // poseArray for samples
+    geometry_msgs::Pose pose; // pose for one sample
+
+    // header infos
     sample_poses.header.frame_id = "map"; // setzen des fram_ids auf map
-
-    // 3 hard coded test poses
-    geometry_msgs::Pose pose1;
-    pose1.position.x = 1.0;
-    pose1.position.y = 2.0;
-    pose1.position.z = 0.0;
-
-    geometry_msgs::Pose pose2;
-    pose2.position.x = -1.0;
-    pose2.position.y = 0.0;
-    pose2.position.z = 0.0;
-
-    geometry_msgs::Pose pose3;
-    pose3.position.x = 3.0;
-    pose3.position.y = -2.0;
-    pose3.position.z = 0.0;
-
-
-    //sample_poses.poses.push_back(pose1);
-    //sample_poses.poses.push_back(pose2);
-    //sample_poses.poses.push_back(pose3);
-
-
-
-    // pose for samples
-    geometry_msgs::Pose pose;
 
 
     ros::Rate loop_rate(10); // updating with 10 Hz
@@ -500,7 +507,7 @@ int main(int argc, char **argv)
             sample_poses.poses.push_back(pose);
         }
 
-        //test prints
+        // test prints
         std::cout << "----------" << std::endl;
         std::cout << "Time (dt): " << filter.getDt() << std::endl;
         std::cout << "Odom X: " << filter.getOdom().x << ", Y: " << filter.getOdom().y << ", TH: " << (filter.getOdom().th*180/M_PI) << std::endl;
