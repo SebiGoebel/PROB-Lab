@@ -28,6 +28,9 @@
 #define initialTH 0.0
 
 double laserMaxRange = 0.0;
+double laserMinRange = 0.0;
+#define laserScannerPositionX 0.0
+#define laserScannerPositionY 0.0
 
 
 
@@ -146,7 +149,7 @@ public:
     Sample sample_motion_model_Structs(U_t u_t, Sample sample_old, double dt);
     Sample sample_motion_model_this(Sample sample_old);
     geometry_msgs::Pose getSampleFromSample_old_anStelle(int i);
-    double likelihood_field_range_finder_model();
+    double likelihood_field_range_finder_model(Sample sample);
     void resampling();
 
     void algorithmMCL();
@@ -354,18 +357,31 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
     s1.x = x_;
     s1.y = y_;
     s1.th = th_;
-    s1.weight = 0.0; // gewicht alle auf null setzen
+    s1.weight = 0.0; // alle gewichte auf null setzen
     return s1;
 }
 
 // für ein sample
-double Filter::likelihood_field_range_finder_model()
+double Filter::likelihood_field_range_finder_model(Sample sample)
 {
     double probability = 1.0;
-    for(int i = 0; i < anzSamples; i++){
-        //code
+    for(int i = 0; i < this->sensor_model_.laserScan.size(); i++){ // für alle beams (i = angle of beam)
+        if(this->sensor_model_.laserScan[i] > laserMinRange && this->sensor_model_.laserScan[i] < laserMaxRange){ // check if beam is valid
+            // Grad i umrechnen in rad
+            double angleInRad = i/180*M_PI;
+            // Transforming Scanner to the world frame
+            double x_ztk = sample.x + laserScannerPositionX * cos(sample.th) - laserScannerPositionY * sin(sample.th) + this->sensor_model_.laserScan[i] * cos(sample.th + angleInRad);
+            double y_ztk = sample.y + laserScannerPositionY * cos(sample.th) + laserScannerPositionX * sin(sample.th) + this->sensor_model_.laserScan[i] * sin(sample.th + angleInRad);
+
+            // vielleicht das th vom sensor (i oder angleInRad) berechnen --> float32 angle_increment  # angular distance between measurements [rad]
+            // siehe Message definition:
+            // http://docs.ros.org/en/api/sensor_msgs/html/msg/LaserScan.html
+
+            // Zeile 7 --> dist²
+            // Zeile 8 --> berechnen von q (probability)
+        }
     }
-    return 0;
+    return probability;
 }
 
 void Filter::resampling()
@@ -422,6 +438,7 @@ void Filter::callback_odom(const nav_msgs::Odometry::ConstPtr& odom_msg){
 void Filter::callback_laser(const sensor_msgs::LaserScan::ConstPtr& laser_msg){
 
 	laserMaxRange = laser_msg->range_max;
+    laserMinRange = laser_msg->range_min;
     this->sensor_model_.laserScan = laser_msg->ranges;
     
     // test print
@@ -512,6 +529,8 @@ int main(int argc, char **argv)
         std::cout << "Time (dt): " << filter.getDt() << std::endl;
         std::cout << "Odom X: " << filter.getOdom().x << ", Y: " << filter.getOdom().y << ", TH: " << (filter.getOdom().th*180/M_PI) << std::endl;
         std::cout << "     V: " << filter.getU_t().v << ", W: " << filter.getU_t().w << std::endl;
+        std::cout << "laserMax: " << laserMaxRange << std::endl;
+        std::cout << "laserMin: " << laserMinRange << std::endl;
 
         //publishing sample poses
         pub_particle_cloud.publish(sample_poses);
