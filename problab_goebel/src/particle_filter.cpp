@@ -8,8 +8,10 @@
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/Pose.h>
 #include <sensor_msgs/LaserScan.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <random>
 #include <cmath>
+#include <algorithm>
 
 //Hyperparameter
 #define anzSamples 100
@@ -26,26 +28,28 @@
 #define initialX 0.5
 #define initialY 0.5
 #define initialTH 0.0
+#define initialPosesNormalverteilt true
 
+//laserScanner
 double laserMaxRange = 0.0;
 double laserMinRange = 0.0;
 #define laserScannerPositionX 0.0
 #define laserScannerPositionY 0.0
 
+//Map
+int map_height; // 4000
+int map_width;  // 4000
+#define sizeOfMap 100
 
 
 // ================= random distributions =================
 
-double random_value(){
+double random_value(double min, double max){
     // Zufallszahlengenerator
     std::random_device rd;
     std::mt19937 generator(rd());
 
-    // Bereich der Gleichverteilung
-    double min = -1.0;
-    double max = 1.0;
-
-    // Gleichverteilung zw. -1 und 1
+    // Gleichverteilung zw. min- und max-value
     std::uniform_real_distribution<double> distribution(min, max);
 
     // Generiere eine Zufallszahl
@@ -59,7 +63,7 @@ double sample_normal_distribution(double b){ // b -> variance
     double helpervar = 0.0;
 
     for(int i = 0; i < 12; i++){
-        helpervar += random_value();
+        helpervar += random_value(-1.0, 1.0);
     }
 
     double result = b / 6 * helpervar;
@@ -68,8 +72,8 @@ double sample_normal_distribution(double b){ // b -> variance
 }
 
 double sample_triangular_distribution(double b){ // b -> variance
-    double helpervar1 = random_value();
-    double helpervar2 = random_value();
+    double helpervar1 = random_value(-1.0, 1.0);
+    double helpervar2 = random_value(-1.0, 1.0);
     return b * helpervar1 * helpervar2;
 }
 
@@ -109,6 +113,16 @@ struct Odom{
     double x;
     double y;
     double th;
+    double x_vel;
+    double y_vel;
+    double th_vel;
+};
+
+struct Map{
+    double resolution;
+    int height;
+    int width;
+    int data[sizeOfMap][sizeOfMap];
 };
 
 // ================= Sample --> geometry_msgs::Pose =================
@@ -150,7 +164,7 @@ public:
     Sample sample_motion_model_this(Sample sample_old);
     geometry_msgs::Pose getSampleFromSample_old_anStelle(int i);
     double likelihood_field_range_finder_model(Sample sample);
-    void resampling();
+    std::vector<Sample> low_variance_sampler(Sample* predictedSamples);
 
     void algorithmMCL();
 
@@ -158,6 +172,7 @@ public:
     void callback_cmd_vel(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg);
     void callback_odom(const nav_msgs::Odometry::ConstPtr& odom_msg);
     void callback_laser(const sensor_msgs::LaserScan::ConstPtr& laser_msg);
+    void callback_grid(const nav_msgs::OccupancyGrid::ConstPtr& grid_msg);
 
     // setter + getter
     void setOdom(const Odom& odom){
@@ -184,6 +199,14 @@ public:
         return this->sensor_model_;
     }
 
+    void setMap(const Map& map){
+        this->map_ = map;
+    }
+
+    Map getMap() const {
+        return this->map_;
+    }
+
     void setTime_stamp_old(const double& time_stamp){
         this->time_stamp_old_ = time_stamp;
     }
@@ -205,16 +228,6 @@ public:
     }
 
 private:
-    //double x_odom = 0.0;
-    //double y_odom = 0.0;
-    //double th_odom = 0.0;
-    //double v_cmd_vel = 0.0;
-    //double w_cmd_vel = 0.0;
-
-    //double pose_x_ = 0.0;
-    //double pose_y_ = 0.0;
-    //double pose_th_ = 0.0;
-
     // samples
     Sample samples_old_[anzSamples];
     //Sample samples_predicted_with_motion_[anzSamples];
@@ -224,11 +237,14 @@ private:
     U_t motion_model_;
     Z_t sensor_model_;
     Odom odom_;
+    Map map_;
     
     // time variables
     double time_stamp_old_;
     double dt_;
 };
+
+// ========================================== Konstruktor: setting initials ==========================================
 
 Filter::Filter(){
     Odom o_default;
@@ -242,16 +258,33 @@ Filter::Filter(){
     motion_model_default.w = 0.0;
     this->motion_model_ = motion_model_default;
 
-    Sample sample_default;
-    sample_default.x = initialX;
-    sample_default.y = initialY;
-    sample_default.th = initialTH;
-    sample_default.weight = 1/anzSamples; // gewichtung gleichmäßig verteilt
+    if(initialPosesNormalverteilt){
+        // Initial Posen: Normalverteilt
+        //https://cplusplus.com/reference/random/normal_distribution/
+        std::default_random_engine generator;
+        std::normal_distribution<double> distributionPosition(0.5, 1.0); // µ = 0.5, σ = 1.0
 
-    for(int i = 0; i < anzSamples; i++){
-        this->samples_old_[i] = sample_default;
-        //this->samples_predicted_[i] = sample_default;
-        //this->samples_corrected_[i] = sample_default;
+        for(int i = 0; i < anzSamples; i++){
+            this->samples_old_[i].x = distributionPosition(generator);
+            this->samples_old_[i].y = distributionPosition(generator);
+            this->samples_old_[i].th = random_value(-M_PI, M_PI);
+            this->samples_old_[i].weight = 1/anzSamples; // gewichtung gleichmäßig verteilt
+        }
+    }
+    else
+    {
+        // Initial Posen: fixe Posen
+        Sample sample_default;
+        sample_default.x = initialX;
+        sample_default.y = initialY;
+        sample_default.th = initialTH;
+        sample_default.weight = 1/anzSamples; // gewichtung gleichmäßig verteilt
+
+        for(int i = 0; i < anzSamples; i++){
+            this->samples_old_[i] = sample_default;
+            //this->samples_predicted_[i] = sample_default;
+            //this->samples_corrected_[i] = sample_default;
+        }
     }
 
     //for(int i = 0; i < anzSamples; i++){
@@ -267,6 +300,8 @@ Filter::Filter(){
 geometry_msgs::Pose Filter::getSampleFromSample_old_anStelle(int i) {
     return sample2Pose(this->samples_old_[i]);
 }
+
+// ========================================== Motion Models ==========================================
 
 /*
 Sample Filter::sample_motion_model(double v, double w, double x, double y, double th, double dt)
@@ -351,7 +386,6 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
 
     //std::cout << "test: x_: " << x_ << ", y_: " << y_ << ", th_: " << (th_*180/M_PI) << std::endl;
     
-
     // speichern in Sample-struct und return
     Sample s1;
     s1.x = x_;
@@ -360,6 +394,8 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
     s1.weight = 0.0; // alle gewichte auf null setzen
     return s1;
 }
+
+// ========================================== Sensor Models ==========================================
 
 // für ein sample
 double Filter::likelihood_field_range_finder_model(Sample sample)
@@ -384,15 +420,108 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
     return probability;
 }
 
-void Filter::resampling()
+// ========================================== resampling ==========================================
+
+/* --> von GitHub
+vector<state_t> Resampler::multinomial_sampler(vector<state_t> x_bar)
 {
-    // code
+    // number of particles
+    long M = x_bar.size();
+
+    // Extract the particle weights.
+    vector<double> weights;
+    for(int i=0; i<M; ++i) {
+        weights.push_back(x_bar[i].weight);
+    }
+
+    // Create the distribution with those weights.
+    discrete_distribution<> dist(weights.begin(), weights.end());
+
+    // Use the distribution to resample particles.
+    vector<state_t> x_bar_resampled(M);
+    mt19937 gen(rand());
+
+    for(int i=0; i<M; ++i) {
+        x_bar_resampled[i] = x_bar[dist(gen)];
+    }
+
+    return x_bar_resampled;
 }
+
+*/
+
+/* --> von GitHub
+vector<state_t> Resampler::low_variance_sampler(vector<state_t> x_bar)
+{
+    // number of particles
+    long M = x_bar.size();
+
+    // sampler parameters
+    uniform_real_distribution<> dist(0.0, (double)(1.0/(double)M));
+    mt19937 gen(rand());
+
+    double r = dist(gen);
+    double c = x_bar[0].weight;
+    int i = 0;
+    vector<state_t> x_bar_resampled(M);
+
+    for (int m=1; m<=M; ++m)
+    {
+        double u = r + ((double) (m-1) / (double) M);
+        while (u > c)
+        {
+            ++i;
+            c += x_bar[i].weight;
+        }
+        x_bar_resampled[m-1] = x_bar[i];
+    }
+
+    return x_bar_resampled;
+}
+*/
+
+std::vector<Sample> Filter::low_variance_sampler(Sample* predictedSamples) {
+    // empty set of samples
+    std::vector<Sample> correctedSamples(anzSamples);
+
+    // random value
+    double r = random_value(0.0, 1.0/anzSamples);
+
+    // Gewichte Normalisieren
+    std::vector<double> normWeights(anzSamples);
+    double sumWeights = 0.0;
+    for(int i = 0; i < anzSamples; i++){
+        sumWeights += predictedSamples[i].weight;
+    }
+    if(sumWeights != 0.0){
+        for(int i = 0; i < anzSamples; i++){
+            normWeights[i] = predictedSamples[i].weight / sumWeights;
+        }
+    }
+
+    double c = normWeights[0];
+    int i = 0;
+    int j = 0;
+
+    for(int m = 0; m < anzSamples; m++){
+        double u = r + m * (1/anzSamples);
+        while(u > c){
+            i = i + 1;
+            c = c + normWeights[i];
+        }
+        correctedSamples[j] = predictedSamples[i];
+        j++;
+    }
+
+    return correctedSamples;
+}
+
+// ========================================== Monte Carlo Localization Algorithm ==========================================
 
 void Filter::algorithmMCL(){
     
     Sample samples_predicted[anzSamples]; // for sampling and weighting
-    //Sample samples_new[anzSamples]; // for resampling
+    //Sample* samples_new = new Sample[anzSamples]; // for resampling
 
     for(int i = 0; i < anzSamples; i++){
         samples_predicted[i] = sample_motion_model_this(this->samples_old_[i]);
@@ -404,9 +533,8 @@ void Filter::algorithmMCL(){
     //}
 
     //for(int i = 0; i < anzSamples; i++){
-        //resampling
+        //low_variance_sampler
     //}
-
 
     // Array übertragen an samples_old_
     for(int i = 0; i < anzSamples; i++){
@@ -414,7 +542,7 @@ void Filter::algorithmMCL(){
     }
 }
 
-
+// ========================================== callback funktionen ==========================================
 
 void Filter::callback_cmd_vel(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg){
 
@@ -430,6 +558,10 @@ void Filter::callback_odom(const nav_msgs::Odometry::ConstPtr& odom_msg){
     this->odom_.th = tf::getYaw(odom_msg->pose.pose.orientation);
 	this->odom_.x = odom_msg->pose.pose.position.x;
 	this->odom_.y = odom_msg->pose.pose.position.y;
+
+    this->odom_.x_vel = odom_msg->twist.twist.linear.x;
+    this->odom_.y_vel = odom_msg->twist.twist.linear.y;
+    this->odom_.th_vel = odom_msg->twist.twist.angular.z;
     
     // test print
     //std::cout << "X: " << this->odom_.x << ", Y: " << this->odom_.y << ", TH: " << this->odom_.th << std::endl;
@@ -449,42 +581,43 @@ void Filter::callback_laser(const sensor_msgs::LaserScan::ConstPtr& laser_msg){
     //std::cout << "size: " << this->sensor_model_.laserScan.size() << std::endl;
 }
 
-// ========================================== cmd_vel listener ==========================================
-/*
-void cmd_velCallback(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg)
-{
-    // linear
-    double linear_x = cmd_vel_msg->linear.x; // x
-    double linear_y = cmd_vel_msg->linear.y; // y --> sollte immer 0 sein
-    double linear_z = cmd_vel_msg->linear.z; // --> immer 0
+void Filter::callback_grid(const nav_msgs::OccupancyGrid::ConstPtr& grid_msg){
 
-    // angular
-    double angular_x = cmd_vel_msg->angular.x; // --> immer 0
-    double angular_y = cmd_vel_msg->angular.y; // --> immer 0
-    double angular_z = cmd_vel_msg->angular.z; // th
+    
+    this->map_.resolution = grid_msg->info.resolution;
+    this->map_.height = grid_msg->info.height;
+    this->map_.width = grid_msg->info.width;
 
-    //ROS_INFO("I heard linear:  [%f, %f, %f]", linear_x, linear_y, linear_z);
-    //ROS_INFO("I heard angular: [%f, %f, %f]", angular_x, angular_y, angular_z);
-    ROS_INFO("I heard motion command(u_t = (v w)^T): [%f, %f]", linear_x, angular_z);
+    map_height = grid_msg->info.height;
+    map_width = grid_msg->info.width;
+
+    // kopieren des occupancy grids in mein 2D Array
+    for(int zeile = 0; zeile < sizeOfMap; zeile++){
+        for(int spalte = 0; spalte < sizeOfMap; spalte++){
+            int index = zeile * sizeOfMap + spalte;
+            this->map_.data[zeile][spalte] = grid_msg->data[index];
+        }
+    }
+
+    
+    // test print
+    //std::cout << "res: " << this->map_.resolution << ", height: " << this->map_.height << ", width: " << this->map_.width << std::endl;
 }
-*/
+
+// ========================================== main ==========================================
 
 int main(int argc, char **argv)
 {
-    
     Filter filter;
 
     ros::init(argc, argv, "particle_filter");
     ros::NodeHandle n;
 
-    
-
     // subscribers
-    //ros::Subscriber sub_cmd_vel = n.subscribe("cmd_vel", 1000, cmd_velCallback);
-    //ros::Subscriber sub_odom = n.subscribe("odom", 1000, chatterCallback);
     ros::Subscriber sub_cmd_vel = n.subscribe("cmd_vel", 1000, &Filter::callback_cmd_vel, &filter);
     ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom, &filter);
     ros::Subscriber sub_laser = n.subscribe("scan", 1000, &Filter::callback_laser, &filter);
+    ros::Subscriber sub_occupancy_grid = n.subscribe("map", 1000, &Filter::callback_grid, &filter);
 
     // publisher
     ros::Publisher pub_particle_cloud = n.advertise<geometry_msgs::PoseArray>("/particlecloud", 10);
@@ -531,6 +664,19 @@ int main(int argc, char **argv)
         std::cout << "     V: " << filter.getU_t().v << ", W: " << filter.getU_t().w << std::endl;
         std::cout << "laserMax: " << laserMaxRange << std::endl;
         std::cout << "laserMin: " << laserMinRange << std::endl;
+        std::cout << "map_height: " << map_height << std::endl;
+        std::cout << "map_width: " << map_width << std::endl;
+
+        std::cout << "---" << std::endl;
+
+        for(int zeile = 0; zeile < sizeOfMap; zeile++){
+            for(int spalte = 0; spalte < sizeOfMap; spalte++){
+                std::cout << filter.getMap().data[zeile][spalte] << ", ";
+            }
+            std::cout << std::endl;
+        }
+
+        std::cout << std::endl;
 
         //publishing sample poses
         pub_particle_cloud.publish(sample_poses);
