@@ -422,70 +422,14 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
 
 // ========================================== resampling ==========================================
 
-/* --> von GitHub
-vector<state_t> Resampler::multinomial_sampler(vector<state_t> x_bar)
-{
-    // number of particles
-    long M = x_bar.size();
-
-    // Extract the particle weights.
-    vector<double> weights;
-    for(int i=0; i<M; ++i) {
-        weights.push_back(x_bar[i].weight);
-    }
-
-    // Create the distribution with those weights.
-    discrete_distribution<> dist(weights.begin(), weights.end());
-
-    // Use the distribution to resample particles.
-    vector<state_t> x_bar_resampled(M);
-    mt19937 gen(rand());
-
-    for(int i=0; i<M; ++i) {
-        x_bar_resampled[i] = x_bar[dist(gen)];
-    }
-
-    return x_bar_resampled;
-}
-
-*/
-
-/* --> von GitHub
-vector<state_t> Resampler::low_variance_sampler(vector<state_t> x_bar)
-{
-    // number of particles
-    long M = x_bar.size();
-
-    // sampler parameters
-    uniform_real_distribution<> dist(0.0, (double)(1.0/(double)M));
-    mt19937 gen(rand());
-
-    double r = dist(gen);
-    double c = x_bar[0].weight;
-    int i = 0;
-    vector<state_t> x_bar_resampled(M);
-
-    for (int m=1; m<=M; ++m)
-    {
-        double u = r + ((double) (m-1) / (double) M);
-        while (u > c)
-        {
-            ++i;
-            c += x_bar[i].weight;
-        }
-        x_bar_resampled[m-1] = x_bar[i];
-    }
-
-    return x_bar_resampled;
-}
-*/
-
+//std::vector<Sample> Filter::low_variance_sampler(vector<Sample> predictedSamples) {
 std::vector<Sample> Filter::low_variance_sampler(Sample* predictedSamples) {
     // empty set of samples
     std::vector<Sample> correctedSamples(anzSamples);
 
     // random value
     double r = random_value(0.0, 1.0/anzSamples);
+    //double r = random_value(0.0, (double)(1.0/(double)anzSamples));
 
     // Gewichte Normalisieren
     std::vector<double> normWeights(anzSamples);
@@ -499,12 +443,14 @@ std::vector<Sample> Filter::low_variance_sampler(Sample* predictedSamples) {
         }
     }
 
-    double c = normWeights[0];
-    int i = 0;
-    int j = 0;
+    double c = normWeights[0]; // cumulative sum
+    int i = 0;                 // index for predictedSamples --> drawing
+    int j = 0;                 // index for correctedSamples --> placing/speichern
 
+    // draw with replacement
     for(int m = 0; m < anzSamples; m++){
         double u = r + m * (1/anzSamples);
+        //double u = r + ((double) m * (double)(1.0/(double)anzSamples));
         while(u > c){
             i = i + 1;
             c = c + normWeights[i];
