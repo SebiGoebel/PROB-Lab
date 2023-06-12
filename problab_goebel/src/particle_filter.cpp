@@ -14,7 +14,7 @@
 #include <algorithm>
 
 //Hyperparameter
-#define anzSamples 100
+#define anzSamples 1000
 #define alpha_1 0.8
 #define alpha_2 0.2
 #define alpha_3 0.2
@@ -160,7 +160,6 @@ public:
 
     // Methoden
     geometry_msgs::Pose getSampleFromSample_old_anStelle(int i);
-    //Sample sample_motion_model(double v, double w, double x, double y, double th, double dt);
     Sample sample_motion_model_Structs(U_t u_t, Sample sample_old, double dt);
     Sample sample_motion_model_this(Sample sample_old);
     double likelihood_field_range_finder_model(Sample sample);
@@ -236,8 +235,6 @@ public:
 private:
     // samples
     Sample samples_old_[anzSamples];
-    //Sample samples_predicted_with_motion_[anzSamples];
-    //Sample samples_weighted_[anzSamples];
     
     // models
     U_t motion_model_;
@@ -271,12 +268,13 @@ Filter::Filter(){
         // Initial Posen: Normalverteilt
         //https://cplusplus.com/reference/random/normal_distribution/
         std::default_random_engine generator;
-        std::normal_distribution<double> distributionPosition(0.5, 1.0); // µ = 0.5, σ = 0.5
+        std::normal_distribution<double> distributionPosition(0.5, 1.0); // µ = 0.5, σ = 1.0
 
         for(int i = 0; i < anzSamples; i++){
             this->samples_old_[i].x = distributionPosition(generator);
             this->samples_old_[i].y = distributionPosition(generator);
             this->samples_old_[i].th = random_value(-M_PI, M_PI);
+            //this->samples_old_[i].th = random_value(-1.0, 1.0);
             this->samples_old_[i].weight = (double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
         }
     }
@@ -311,34 +309,6 @@ geometry_msgs::Pose Filter::getSampleFromSample_old_anStelle(int i) {
 }
 
 // ========================================== Motion Models ==========================================
-
-/*
-Sample Filter::sample_motion_model(double v, double w, double x, double y, double th, double dt)
-{
-    // preparing Input for sampling()
-    double absV = abs(v);
-    double absW = abs(w);
-
-    double variance1 = alpha_1 * absV + alpha_2 * absW;
-    double variance2 = alpha_3 * absV + alpha_4 * absW;
-    double variance3 = alpha_5 * absV + alpha_6 * absW;
-    
-    // motion model
-    double v_hat = v + sampling(variance1);
-    double w_hat = w + sampling(variance2);
-    double th_hilf = sampling(variance3);
-    double x_ = x - ((v_hat/w_hat) * sin(th)) + ((v_hat/w_hat) * sin(th + w_hat * dt));
-    double y_ = y + ((v_hat/w_hat) * cos(th)) - ((v_hat/w_hat) * sin(th + w_hat * dt));
-    double th_ = th + w_hat * dt + th_hilf * dt;
-
-    // speichern in Sample-struct und return
-    Sample s1;
-    s1.x = x_;
-    s1.y = y_;
-    s1.th = th_;
-    return s1;
-}
-*/
 
 Sample Filter::sample_motion_model_Structs(U_t u_t, Sample sample_old, double dt)
 {
@@ -445,7 +415,7 @@ double Filter::odom_vel_sensor_model(Sample predictedSample, Sample oldSample){
     if(this->dt_ != 0.0){
         sampleX_vel = abs(sampleX) / this->dt_;
         sampleY_vel = abs(sampleY) / this->dt_;
-        sampleTh_vel = abs(sampleTh) / this->dt_;   
+        sampleTh_vel = abs(sampleTh) / this->dt_;
     }
     else
     {
@@ -458,6 +428,8 @@ double Filter::odom_vel_sensor_model(Sample predictedSample, Sample oldSample){
     double diffX = sampleX_vel - this->odom_.x_vel;
     double diffY = sampleY_vel - this->odom_.y_vel;
     double diffTh = sampleTh_vel - this->odom_.th_vel;
+
+    //double gewichtung = (1.0 / diffX) + (1.0 / diffY) + (1.0 / diffTh);
 
     double gewichtung = diffX * diffY * diffTh;
 
