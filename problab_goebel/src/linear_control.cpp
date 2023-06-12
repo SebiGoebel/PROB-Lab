@@ -81,7 +81,7 @@ void linearrechner(double x, double y, double th);
  
  void linearrechner(double pX, double pY, double pT)
  {
- 	double dX = pX-x; 				
+ 	double dX = pX-x;
 	double dY = pY-y;
 	double dTh = pT-th;
 

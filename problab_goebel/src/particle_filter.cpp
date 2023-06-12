@@ -28,7 +28,7 @@
 #define initialX 0.5
 #define initialY 0.5
 #define initialTH 0.0
-#define initialPosesNormalverteilt false
+#define initialPosesNormalverteilt true
 
 //laserScanner
 double laserMaxRange = 0.0;
@@ -159,11 +159,12 @@ public:
     Filter();
 
     // Methoden
+    geometry_msgs::Pose getSampleFromSample_old_anStelle(int i);
     //Sample sample_motion_model(double v, double w, double x, double y, double th, double dt);
     Sample sample_motion_model_Structs(U_t u_t, Sample sample_old, double dt);
     Sample sample_motion_model_this(Sample sample_old);
-    geometry_msgs::Pose getSampleFromSample_old_anStelle(int i);
     double likelihood_field_range_finder_model(Sample sample);
+    double odom_vel_sensor_model(Sample predictedSample, Sample oldSample);
     std::vector<Sample> low_variance_sampler(std::vector<Sample> predictedSamples);
 
     void algorithmMCL();
@@ -256,6 +257,9 @@ Filter::Filter(){
     o_default.x = initialX;
     o_default.y = initialY;
     o_default.th = initialTH;
+    o_default.x_vel = 0.0;
+    o_default.y_vel = 0.0;
+    o_default.th_vel = 0.0;
     this->odom_ = o_default;
 
     U_t motion_model_default;
@@ -267,7 +271,7 @@ Filter::Filter(){
         // Initial Posen: Normalverteilt
         //https://cplusplus.com/reference/random/normal_distribution/
         std::default_random_engine generator;
-        std::normal_distribution<double> distributionPosition(0.5, 1.0); // µ = 0.5, σ = 1.0
+        std::normal_distribution<double> distributionPosition(0.5, 1.0); // µ = 0.5, σ = 0.5
 
         for(int i = 0; i < anzSamples; i++){
             this->samples_old_[i].x = distributionPosition(generator);
@@ -390,13 +394,13 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
     double th_ = sample_old.th + w_hat * this->dt_ + th_hilf * this->dt_;
 
     //std::cout << "test: x_: " << x_ << ", y_: " << y_ << ", th_: " << (th_*180/M_PI) << std::endl;
-    
+
     // speichern in Sample-struct und return
     Sample s1;
     s1.x = x_;
     s1.y = y_;
     s1.th = th_;
-    s1.weight = (double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
+    //s1.weight = 0.1835;//(double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
     return s1;
 }
 
@@ -423,6 +427,49 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
         }
     }
     return probability;
+}
+
+double Filter::odom_vel_sensor_model(Sample predictedSample, Sample oldSample){
+    //double gewichtung = (double)(1.0/(double)anzSamples); // starten mit allen Samples gleichgewichtet
+    
+    // Differenzen zwischen old und predicted Sample
+    double sampleX = predictedSample.x - oldSample.x;
+    double sampleY = predictedSample.y - oldSample.y;
+    double sampleTh = predictedSample.th - oldSample.th;
+
+    // berechnen der velocities
+    double sampleX_vel;
+    double sampleY_vel;
+    double sampleTh_vel;
+
+    if(this->dt_ != 0.0){
+        sampleX_vel = abs(sampleX) / this->dt_;
+        sampleY_vel = abs(sampleY) / this->dt_;
+        sampleTh_vel = abs(sampleTh) / this->dt_;   
+    }
+    else
+    {
+        sampleX_vel = abs(sampleX);
+        sampleY_vel = abs(sampleY);
+        sampleTh_vel = abs(sampleTh);
+    }
+
+    // Differenz zwischen odom_vels und berechneten vels
+    double diffX = sampleX_vel - this->odom_.x_vel;
+    double diffY = sampleY_vel - this->odom_.y_vel;
+    double diffTh = sampleTh_vel - this->odom_.th_vel;
+
+    double gewichtung = diffX * diffY * diffTh;
+
+    if(gewichtung != 0.0){
+        gewichtung = 1.0 / gewichtung;
+    }
+    else
+    {
+        gewichtung = (double)(1.0/(double)anzSamples);
+    }
+    
+    return gewichtung;
 }
 
 // ========================================== resampling ==========================================
@@ -474,12 +521,13 @@ void Filter::algorithmMCL(){
 
     for(int i = 0; i < anzSamples; i++){
         samples_predicted[i] = sample_motion_model_this(this->samples_old_[i]);
-        //samples[i].weight = likelihood_field_range_finder_model();
+        //samples_predicted[i] = odom_vel_sensor_model(samples_predicted[i], this->samples_old_[i]);
     }
 
-    //for(int i = 0; i < anzSamples; i++){
+    for(int i = 0; i < anzSamples; i++){
         // vielleicht weighting in einem eigenen loop
-    //}
+        samples_predicted[i].weight = odom_vel_sensor_model(samples_predicted[i], this->samples_old_[i]);
+    }
 
     // Resampling
     samples_new = low_variance_sampler(samples_predicted);
@@ -491,13 +539,13 @@ void Filter::algorithmMCL(){
     }
 
     // test print
-    //int testIndex = 10;
     //std::cout << "samples_new size: " << samples_new.size() << std::endl;
     //std::cout << "sample " << testIndex << std::endl;
     //std::cout << "x: " << samples_new[testIndex].x << std::endl;
     //std::cout << "y: " << samples_new[testIndex].y << std::endl;
     //std::cout << "th: " << samples_new[testIndex].th << std::endl;
     //std::cout << "weight: " << samples_new[testIndex].weight << std::endl;
+    //std::cout << "---" << std::endl;
 }
 
 // ========================================== callback funktionen ==========================================
@@ -618,8 +666,9 @@ int main(int argc, char **argv)
         // test prints
         std::cout << "----------" << std::endl;
         std::cout << "Time (dt): " << filter.getDt() << std::endl;
-        std::cout << "Odom X: " << filter.getOdom().x << ", Y: " << filter.getOdom().y << ", TH: " << (filter.getOdom().th*180/M_PI) << std::endl;
-        std::cout << "     V: " << filter.getU_t().v << ", W: " << filter.getU_t().w << std::endl;
+        std::cout << "Odom      X: " << filter.getOdom().x << ", Y: " << filter.getOdom().y << ", TH: " << (filter.getOdom().th*180/M_PI) << std::endl;
+        std::cout << "Odom vels X: " << filter.getOdom().x_vel << ", Y: " << filter.getOdom().y_vel << ", TH: " << (filter.getOdom().th_vel*180/M_PI) << std::endl;
+        std::cout << "          V: " << filter.getU_t().v << ", W: " << filter.getU_t().w << std::endl;
         std::cout << "laserMax: " << laserMaxRange << std::endl;
         std::cout << "laserMin: " << laserMinRange << std::endl;
         std::cout << "map_height: " << map_height << std::endl;
