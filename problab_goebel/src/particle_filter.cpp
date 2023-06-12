@@ -28,7 +28,7 @@
 #define initialX 0.5
 #define initialY 0.5
 #define initialTH 0.0
-#define initialPosesNormalverteilt true
+#define initialPosesNormalverteilt false
 
 //laserScanner
 double laserMaxRange = 0.0;
@@ -164,7 +164,7 @@ public:
     Sample sample_motion_model_this(Sample sample_old);
     geometry_msgs::Pose getSampleFromSample_old_anStelle(int i);
     double likelihood_field_range_finder_model(Sample sample);
-    std::vector<Sample> low_variance_sampler(Sample* predictedSamples);
+    std::vector<Sample> low_variance_sampler(std::vector<Sample> predictedSamples);
 
     void algorithmMCL();
 
@@ -268,7 +268,7 @@ Filter::Filter(){
             this->samples_old_[i].x = distributionPosition(generator);
             this->samples_old_[i].y = distributionPosition(generator);
             this->samples_old_[i].th = random_value(-M_PI, M_PI);
-            this->samples_old_[i].weight = 1/anzSamples; // gewichtung gleichmäßig verteilt
+            this->samples_old_[i].weight = (double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
         }
     }
     else
@@ -278,7 +278,7 @@ Filter::Filter(){
         sample_default.x = initialX;
         sample_default.y = initialY;
         sample_default.th = initialTH;
-        sample_default.weight = 1/anzSamples; // gewichtung gleichmäßig verteilt
+        sample_default.weight = (double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
 
         for(int i = 0; i < anzSamples; i++){
             this->samples_old_[i] = sample_default;
@@ -391,7 +391,7 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
     s1.x = x_;
     s1.y = y_;
     s1.th = th_;
-    s1.weight = 0.0; // alle gewichte auf null setzen
+    s1.weight = (double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
     return s1;
 }
 
@@ -422,14 +422,13 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
 
 // ========================================== resampling ==========================================
 
-//std::vector<Sample> Filter::low_variance_sampler(vector<Sample> predictedSamples) {
-std::vector<Sample> Filter::low_variance_sampler(Sample* predictedSamples) {
+std::vector<Sample> Filter::low_variance_sampler(std::vector<Sample> predictedSamples) {
     // empty set of samples
     std::vector<Sample> correctedSamples(anzSamples);
 
     // random value
-    double r = random_value(0.0, 1.0/anzSamples);
-    //double r = random_value(0.0, (double)(1.0/(double)anzSamples));
+    //double r = random_value(0.0, 1.0/anzSamples);
+    double r = random_value(0.0, (double)(1.0/(double)anzSamples));
 
     // Gewichte Normalisieren
     std::vector<double> normWeights(anzSamples);
@@ -449,8 +448,8 @@ std::vector<Sample> Filter::low_variance_sampler(Sample* predictedSamples) {
 
     // draw with replacement
     for(int m = 0; m < anzSamples; m++){
-        double u = r + m * (1/anzSamples);
-        //double u = r + ((double) m * (double)(1.0/(double)anzSamples));
+        //double u = r + m * (1/anzSamples);
+        double u = r + ((double) m * (double)(1.0/(double)anzSamples));
         while(u > c){
             i = i + 1;
             c = c + normWeights[i];
@@ -465,9 +464,8 @@ std::vector<Sample> Filter::low_variance_sampler(Sample* predictedSamples) {
 // ========================================== Monte Carlo Localization Algorithm ==========================================
 
 void Filter::algorithmMCL(){
-    
-    Sample samples_predicted[anzSamples]; // for sampling and weighting
-    //Sample* samples_new = new Sample[anzSamples]; // for resampling
+    std::vector<Sample> samples_predicted(anzSamples); // for sampling and weighting
+    std::vector<Sample> samples_new(anzSamples);      // for resampling
 
     for(int i = 0; i < anzSamples; i++){
         samples_predicted[i] = sample_motion_model_this(this->samples_old_[i]);
@@ -478,14 +476,23 @@ void Filter::algorithmMCL(){
         // vielleicht weighting in einem eigenen loop
     //}
 
-    //for(int i = 0; i < anzSamples; i++){
-        //low_variance_sampler
-    //}
+    // Resampling
+    samples_new = low_variance_sampler(samples_predicted);
 
     // Array übertragen an samples_old_
     for(int i = 0; i < anzSamples; i++){
-        this->samples_old_[i] = samples_predicted[i];
+        //this->samples_old_[i] = samples_predicted[i]; // nur motion model
+        this->samples_old_[i] = samples_new[i];
     }
+
+    // test print
+    //int testIndex = 10;
+    //std::cout << "samples_new size: " << samples_new.size() << std::endl;
+    //std::cout << "sample " << testIndex << std::endl;
+    //std::cout << "x: " << samples_new[testIndex].x << std::endl;
+    //std::cout << "y: " << samples_new[testIndex].y << std::endl;
+    //std::cout << "th: " << samples_new[testIndex].th << std::endl;
+    //std::cout << "weight: " << samples_new[testIndex].weight << std::endl;
 }
 
 // ========================================== callback funktionen ==========================================
@@ -614,14 +621,14 @@ int main(int argc, char **argv)
         std::cout << "map_width: " << map_width << std::endl;
 
         std::cout << "---" << std::endl;
-
+/*
         for(int zeile = 0; zeile < sizeOfMap; zeile++){
             for(int spalte = 0; spalte < sizeOfMap; spalte++){
                 std::cout << filter.getMap().data[zeile][spalte] << ", ";
             }
             std::cout << std::endl;
         }
-
+*/
         std::cout << std::endl;
 
         //publishing sample poses
