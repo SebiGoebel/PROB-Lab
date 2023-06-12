@@ -227,6 +227,11 @@ public:
         this->dt_ = convertingTime2Double(timeNow) - this->time_stamp_old_;
     }
 
+    //wird erst gebraucht wenn ich saples_old_ zu einem vector mache
+    void copyVector(const std::vector<int>& sourceVector) {
+        //this->samples_old_ = sourceVector;
+    }
+
 private:
     // samples
     Sample samples_old_[anzSamples];
