@@ -589,18 +589,19 @@ void Filter::algorithmMCL(){
     std::vector<Sample> samples_predicted(anzSamples); // for sampling and weighting
     std::vector<Sample> samples_new(anzSamples);      // for resampling
 
+    updateOdomSample();
     for(int i = 0; i < anzSamples; i++){
         samples_predicted[i] = sample_motion_model_this(this->samples_old_[i]);
-        //samples_predicted[i] = odom_vel_sensor_model_linearer_regler(samples_predicted[i], this->samples_old_[i]);
+        samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);
     }
-
+/*
     updateOdomSample();
     for(int i = 0; i < anzSamples; i++){
         // vielleicht weighting in einem eigenen loop
         //samples_predicted[i].weight = odom_vel_sensor_model(samples_predicted[i], this->samples_old_[i]);
         samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);
     }
-
+*/
     // Resampling
     samples_new = low_variance_sampler(samples_predicted);
 
