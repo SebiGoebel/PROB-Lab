@@ -28,7 +28,9 @@
 #define initialX 0.5
 #define initialY 0.5
 #define initialTH 0.0
-#define initialPosesNormalverteilt true
+#define initialPosesNormalverteilt true // bei alles sensor models die nur mit odom arbeiten
+                                         // ist es notwendig die initial pose zu kennen
+                                         // --> muss deshalb auf false gesetzt werden
 
 //laserScanner
 double laserMaxRange = 0.0;
@@ -114,7 +116,7 @@ struct Odom{
     double y;
     double th;
     double x_vel;
-    double y_vel;
+    //double y_vel;
     double th_vel;
 };
 
@@ -163,7 +165,10 @@ public:
     Sample sample_motion_model_Structs(U_t u_t, Sample sample_old, double dt);
     Sample sample_motion_model_this(Sample sample_old);
     double likelihood_field_range_finder_model(Sample sample);
+    double odom_vel_sensor_model_linearer_regler(Sample predictedSample, Sample oldSample);
     double odom_vel_sensor_model(Sample predictedSample, Sample oldSample);
+    void updateOdomSample();
+    double odom_vel_sensor_model_odomSample(Sample predictedSample);
     std::vector<Sample> low_variance_sampler(std::vector<Sample> predictedSamples);
 
     void algorithmMCL();
@@ -235,6 +240,7 @@ public:
 private:
     // samples
     Sample samples_old_[anzSamples];
+    Sample odomSample_;
     
     // models
     U_t motion_model_;
@@ -255,7 +261,7 @@ Filter::Filter(){
     o_default.y = initialY;
     o_default.th = initialTH;
     o_default.x_vel = 0.0;
-    o_default.y_vel = 0.0;
+    //o_default.y_vel = 0.0;
     o_default.th_vel = 0.0;
     this->odom_ = o_default;
 
@@ -293,6 +299,12 @@ Filter::Filter(){
             //this->samples_corrected_[i] = sample_default;
         }
     }
+
+    Sample odomSample_default;
+    odomSample_default.x = initialX;
+    odomSample_default.y = initialY;
+    odomSample_default.th = initialTH;
+    this->odomSample_ = odomSample_default;
 
     //for(int i = 0; i < anzSamples; i++){
     //    this->sensor_model_.laserScan.push_back(0.0);
@@ -359,6 +371,7 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
         return sample_old;
     }
 
+    // kinematic model
     double x_ = sample_old.x - ((v_hat/w_hat) * sin(sample_old.th)) + ((v_hat/w_hat) * sin(sample_old.th + w_hat * this->dt_));
     double y_ = sample_old.y + ((v_hat/w_hat) * cos(sample_old.th)) - ((v_hat/w_hat) * cos(sample_old.th + w_hat * this->dt_));
     double th_ = sample_old.th + w_hat * this->dt_ + th_hilf * this->dt_;
@@ -399,48 +412,133 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
     return probability;
 }
 
-double Filter::odom_vel_sensor_model(Sample predictedSample, Sample oldSample){
-    //double gewichtung = (double)(1.0/(double)anzSamples); // starten mit allen Samples gleichgewichtet
-    
-    // Differenzen zwischen old und predicted Sample
-    double sampleX = predictedSample.x - oldSample.x;
-    double sampleY = predictedSample.y - oldSample.y;
-    double sampleTh = predictedSample.th - oldSample.th;
+// ---------- odometrie sensor models ----------
 
-    // berechnen der velocities
-    double sampleX_vel;
-    double sampleY_vel;
-    double sampleTh_vel;
+double Filter::odom_vel_sensor_model_linearer_regler(Sample predictedSample, Sample oldSample){
 
-    if(this->dt_ != 0.0){
-        sampleX_vel = abs(sampleX) / this->dt_;
-        sampleY_vel = abs(sampleY) / this->dt_;
-        sampleTh_vel = abs(sampleTh) / this->dt_;
+    double gewichtung = 0.0;
+
+    if(this->motion_model_.v > 0.1 || this->motion_model_.v < -0.1 || this->motion_model_.w > 0.1 || this->motion_model_.w < -0.1){
+        //double gewichtung = (double)(1.0/(double)anzSamples); // starten mit allen Samples gleichgewichtet
+        // Regelparameter nach Siegwart (2004)
+        double kp = 0.4;
+        double ka = 1;
+        double kb = -0.3;
+        
+        // Differenzen zwischen old und predicted Sample
+        double delta_X = predictedSample.x - oldSample.x;
+        double delta_Y = predictedSample.y - oldSample.y;
+        double delta_Th = predictedSample.th - oldSample.th;
+
+        // berechnen von v und w --> mit lineare regelung
+        double p = sqrt((delta_X * delta_X) + (delta_Y * delta_Y));
+        double alpha = -oldSample.th + atan2(delta_Y, delta_X);
+        
+        // begrenzen von alpha
+        if(alpha > M_PI){
+            alpha = alpha - 2 * M_PI;
+        }
+        if(alpha < -M_PI){
+            alpha = alpha + 2 * M_PI;
+        }
+        
+        // berechnen und begrenzen von beta
+        double beta = delta_Th - alpha;
+        if(beta > M_PI){
+            beta = beta - 2 * M_PI;
+        }
+        if(beta < -M_PI){
+            beta = beta + 2 * M_PI;
+        }
+
+        // berechnnen de
+        double v_regler = kp * p;
+        double w_regler = ka * alpha + kb * beta;
+
+        // Differenz zwischen odom_vels und berechneten vels
+        double diffV = v_regler - this->odom_.x_vel;
+        double diffW = w_regler - this->odom_.th_vel;
+
+        gewichtung = abs(diffV) * abs(diffW);
+
+        if(gewichtung != 0.0){
+            gewichtung = 1.0 / gewichtung;
+        }
     }
     else
     {
-        sampleX_vel = abs(sampleX);
-        sampleY_vel = abs(sampleY);
-        sampleTh_vel = abs(sampleTh);
-    }
-
-    // Differenz zwischen odom_vels und berechneten vels
-    double diffX = sampleX_vel - this->odom_.x_vel;
-    double diffY = sampleY_vel - this->odom_.y_vel;
-    double diffTh = sampleTh_vel - this->odom_.th_vel;
-
-    //double gewichtung = (1.0 / diffX) + (1.0 / diffY) + (1.0 / diffTh);
-
-    double gewichtung = diffX * diffY * diffTh;
-
-    if(gewichtung != 0.0){
-        gewichtung = 1.0 / gewichtung;
-    }
-    else
-    {
+        // wenn keine bewegung --> alle particle gleich gewichten
         gewichtung = (double)(1.0/(double)anzSamples);
     }
     
+    return gewichtung;
+}
+
+double Filter::odom_vel_sensor_model(Sample predictedSample, Sample oldSample){
+    double gewichtung = 0.0;
+
+    if(this->motion_model_.v > 0.1 || this->motion_model_.v < -0.1 || this->motion_model_.w > 0.1 || this->motion_model_.w < -0.1){
+
+        double v_odom = this->odom_.x_vel;
+        double w_odom = this->odom_.th_vel;
+
+        // berechnen von x, y, th aus den odom v und w
+        double x_berechnet = oldSample.x - ((v_odom/w_odom) * sin(oldSample.th)) + ((v_odom/w_odom) * sin(oldSample.th + w_odom * this->dt_));
+        double y_berechnet = oldSample.y + ((v_odom/w_odom) * cos(oldSample.th)) - ((v_odom/w_odom) * cos(oldSample.th + w_odom * this->dt_));
+        double th_berechnet = oldSample.th + w_odom * this->dt_;
+
+        double diffX = predictedSample.x - x_berechnet;
+        double diffY = predictedSample.y - y_berechnet;
+        double diffTh = predictedSample.th - th_berechnet;
+
+        gewichtung = abs(diffX) * abs(diffY) * abs(diffTh);
+
+        if(gewichtung != 0.0){
+            gewichtung = 1.0 / gewichtung;
+        }
+    }
+    else
+    {
+        // wenn keine bewegung --> alle particle gleich gewichten
+        gewichtung = (double)(1.0/(double)anzSamples);
+    }
+
+    return gewichtung;
+}
+
+void Filter::updateOdomSample(){
+    double v_odom = this->odom_.x_vel;
+    double w_odom = this->odom_.th_vel;
+
+    if(v_odom != 0.0 &&  w_odom != 0.0){
+        // berechnen von x, y, th aus den odom v und w
+        this->odomSample_.x = this->odomSample_.x - ((v_odom/w_odom) * sin(this->odomSample_.th)) + ((v_odom/w_odom) * sin(this->odomSample_.th + w_odom * this->dt_));
+        this->odomSample_.y = this->odomSample_.y + ((v_odom/w_odom) * cos(this->odomSample_.th)) - ((v_odom/w_odom) * cos(this->odomSample_.th + w_odom * this->dt_));
+        this->odomSample_.th = this->odomSample_.th + w_odom * this->dt_;
+    }
+}
+
+double Filter::odom_vel_sensor_model_odomSample(Sample predictedSample){
+    double gewichtung = 0.0;
+
+    if(this->motion_model_.v > 0.1 || this->motion_model_.v < -0.1 || this->motion_model_.w > 0.1 || this->motion_model_.w < -0.1){
+
+        double diffX = predictedSample.x - this->odomSample_.x;
+        double diffY = predictedSample.y - this->odomSample_.y;
+        double diffTh = predictedSample.th - this->odomSample_.th;
+
+        gewichtung = abs(diffX) * abs(diffY) * abs(diffTh);
+
+        if(gewichtung != 0.0){
+            gewichtung = 1.0 / gewichtung;
+        }
+    }
+    else
+    {
+        // wenn keine bewegung --> alle particle gleich gewichten
+        gewichtung = (double)(1.0/(double)anzSamples);
+    }
+
     return gewichtung;
 }
 
@@ -493,12 +591,14 @@ void Filter::algorithmMCL(){
 
     for(int i = 0; i < anzSamples; i++){
         samples_predicted[i] = sample_motion_model_this(this->samples_old_[i]);
-        //samples_predicted[i] = odom_vel_sensor_model(samples_predicted[i], this->samples_old_[i]);
+        //samples_predicted[i] = odom_vel_sensor_model_linearer_regler(samples_predicted[i], this->samples_old_[i]);
     }
 
+    updateOdomSample();
     for(int i = 0; i < anzSamples; i++){
         // vielleicht weighting in einem eigenen loop
-        samples_predicted[i].weight = odom_vel_sensor_model(samples_predicted[i], this->samples_old_[i]);
+        //samples_predicted[i].weight = odom_vel_sensor_model(samples_predicted[i], this->samples_old_[i]);
+        samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);
     }
 
     // Resampling
@@ -538,7 +638,7 @@ void Filter::callback_odom(const nav_msgs::Odometry::ConstPtr& odom_msg){
 	this->odom_.y = odom_msg->pose.pose.position.y;
 
     this->odom_.x_vel = odom_msg->twist.twist.linear.x;
-    this->odom_.y_vel = odom_msg->twist.twist.linear.y;
+    //this->odom_.y_vel = odom_msg->twist.twist.linear.y;
     this->odom_.th_vel = odom_msg->twist.twist.angular.z;
     
     // test print
@@ -639,7 +739,7 @@ int main(int argc, char **argv)
         std::cout << "----------" << std::endl;
         std::cout << "Time (dt): " << filter.getDt() << std::endl;
         std::cout << "Odom      X: " << filter.getOdom().x << ", Y: " << filter.getOdom().y << ", TH: " << (filter.getOdom().th*180/M_PI) << std::endl;
-        std::cout << "Odom vels X: " << filter.getOdom().x_vel << ", Y: " << filter.getOdom().y_vel << ", TH: " << (filter.getOdom().th_vel*180/M_PI) << std::endl;
+        std::cout << "Odom vels X: " << filter.getOdom().x_vel << ", TH: " << (filter.getOdom().th_vel*180/M_PI) << std::endl;
         std::cout << "          V: " << filter.getU_t().v << ", W: " << filter.getU_t().w << std::endl;
         std::cout << "laserMax: " << laserMaxRange << std::endl;
         std::cout << "laserMin: " << laserMinRange << std::endl;
