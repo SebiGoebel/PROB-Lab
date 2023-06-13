@@ -15,12 +15,20 @@
 
 //Hyperparameter
 #define anzSamples 1000
+
+//sample_motion_model_velocity
 #define alpha_1 0.8
 #define alpha_2 0.2
 #define alpha_3 0.2
 #define alpha_4 0.8
 #define alpha_5 0.2
 #define alpha_6 0.6
+
+//sample_motion_model_odometry
+#define alpha_odom_1 1.0
+#define alpha_odom_2 1.0
+#define alpha_odom_3 1.0
+#define alpha_odom_4 1.0
 
 #define normalTriangularDistribution true // decides which distribution should be taken
                                           // [true --> normal distribution; false --> triangular distribution]
@@ -162,8 +170,13 @@ public:
 
     // Methoden
     geometry_msgs::Pose getSampleFromSample_old_anStelle(int i);
+    
+    //Motion Models
     Sample sample_motion_model_Structs(U_t u_t, Sample sample_old, double dt);
     Sample sample_motion_model_this(Sample sample_old);
+    Sample sample_motion_model_odometry(Sample sample_old);
+    
+    //Sensor Models
     double likelihood_field_range_finder_model(Sample sample);
     double odom_vel_sensor_model_linearer_regler(Sample predictedSample, Sample oldSample);
     double odom_vel_sensor_model(Sample predictedSample, Sample oldSample);
@@ -384,6 +397,34 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
     s1.y = y_;
     s1.th = th_;
     //s1.weight = 0.1835;//(double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
+    return s1;
+}
+
+Sample Filter::sample_motion_model_odometry(Sample sample_old){
+
+    // δ == delta
+
+    double delta_rot_1 = 0.0;
+    double delta_trans = 0.0;
+    double delta_rot_2 = 0.0;
+
+    double variance1 = alpha_odom_1 * delta_rot_1 + alpha_odom_2 * delta_trans;
+    double variance2 = alpha_odom_3 * delta_trans + alpha_odom_4 * (delta_rot_1 + delta_rot_2);
+    double variance3 = alpha_odom_1 * delta_rot_2 + alpha_odom_2 * delta_trans;
+
+    double delta_rot_1_hat = delta_rot_1 - sampling(variance1);
+    double delta_trans_hat = delta_trans - sampling(variance2);
+    double delta_rot_2_hat = delta_rot_2 - sampling(variance3);
+
+    double x_ = sample_old.x + delta_trans_hat * cos(sample_old.th + delta_rot_1_hat);
+    double y_ = sample_old.y + delta_trans_hat * sin(sample_old.th + delta_rot_1_hat);
+    double th_ = sample_old.th + delta_rot_1_hat + delta_rot_2_hat;
+
+    // speichern in Sample-struct und return
+    Sample s1;
+    s1.x = x_;
+    s1.y = y_;
+    s1.th = th_;
     return s1;
 }
 
