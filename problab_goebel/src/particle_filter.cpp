@@ -39,9 +39,9 @@ double laserMinRange = 0.0;
 #define laserScannerPositionY 0.0
 
 //Map
-int map_height; // 4000
-int map_width;  // 4000
-#define sizeOfMap 100
+int map_height; // 320
+int map_width;  // 320
+#define sizeOfMap 320 // 320 * 320
 
 
 // ================= random distributions =================
