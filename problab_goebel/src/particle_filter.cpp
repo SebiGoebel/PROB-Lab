@@ -16,7 +16,7 @@
 //Hyperparameter
 #define anzSamples 100
 
-#define nurMotionModel false // wenn true --> zeigt nur das ausgewählte Motion Model an
+#define nurMotionModel true // wenn true --> zeigt nur das ausgewählte Motion Model an
                             // ACHTUNG: wenn true --> es wird nicht resamplet
 
 //sample_motion_model_velocity
@@ -28,7 +28,7 @@
 #define alpha_6 0.6
 
 //sample_motion_model_odometry
-#define motionModelOdom false // decides which motionmodel should be taken
+#define motionModelOdom true // decides which motionmodel should be taken
                              // [true --> Odom; false --> Motion Command]
 #define alpha_odom_1 1.0
 #define alpha_odom_2 1.0
@@ -419,9 +419,9 @@ Sample Filter::sample_motion_model_odometry(Sample sample_old){
     // Buch Seite 110
     // δ == delta
 
-    double toleranz = 0.01;
-
-    if(this->odom_.x > (initialX + toleranz) || this->odom_.x < (initialX - toleranz) || this->odom_.y > (initialY + toleranz) || this->odom_.y < (initialY - toleranz) || this->odom_.th > (initialTH + toleranz) || this->odom_.th < (initialTH - toleranz)){
+    //double toleranz = 0.01;
+    //if(this->odom_.x > (initialX + toleranz) || this->odom_.x < (initialX - toleranz) || this->odom_.y > (initialY + toleranz) || this->odom_.y < (initialY - toleranz) || this->odom_.th > (initialTH + toleranz) || this->odom_.th < (initialTH - toleranz)){
+    if(this->motion_model_.v > 0.1 || this->motion_model_.v < -0.1 || this->motion_model_.w > 0.1 || this->motion_model_.w < -0.1){
 
         double delta_rot_1 = atan2((this->odom_.y - this->odom_.y_d1), (this->odom_.x - this->odom_.x_d1)) - this->odom_.th_d1;
         double delta_trans = sqrt(pow((this->odom_.x_d1 - this->odom_.x), 2) + pow((this->odom_.y_d1 - this->odom_.y), 2));
