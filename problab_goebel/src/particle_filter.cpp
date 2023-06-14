@@ -16,7 +16,7 @@
 //Hyperparameter
 #define anzSamples 100
 
-#define nurMotionModel true // wenn true --> zeigt nur das ausgewählte Motion Model an
+#define nurMotionModel false // wenn true --> zeigt nur das ausgewählte Motion Model an
                             // ACHTUNG: wenn true --> es wird nicht resamplet
 
 //sample_motion_model_velocity
@@ -28,7 +28,7 @@
 #define alpha_6 0.6
 
 //sample_motion_model_odometry
-#define motionModelOdom true // decides which motionmodel should be taken
+#define motionModelOdom false // decides which motionmodel should be taken
                              // [true --> Odom; false --> Motion Command]
 #define alpha_odom_1 1.0
 #define alpha_odom_2 1.0
@@ -435,9 +435,9 @@ Sample Filter::sample_motion_model_odometry(Sample sample_old){
         double delta_trans_hat = delta_trans - sampling(variance2);
         double delta_rot_2_hat = delta_rot_2 - sampling(variance3);
 
-        double x_ = sample_old.x + 2.5 * delta_trans_hat * cos(sample_old.th + delta_rot_1_hat);
-        double y_ = sample_old.y + 2.5 * delta_trans_hat * sin(sample_old.th + delta_rot_1_hat);
-        double th_ = sample_old.th + 2.5 * delta_rot_1_hat + delta_rot_2_hat;
+        double x_ = sample_old.x + delta_trans_hat * cos(sample_old.th + delta_rot_1_hat);
+        double y_ = sample_old.y + delta_trans_hat * sin(sample_old.th + delta_rot_1_hat);
+        double th_ = sample_old.th + delta_rot_1_hat + delta_rot_2_hat;
 
         // speichern in Sample-struct und return
         Sample s1;
