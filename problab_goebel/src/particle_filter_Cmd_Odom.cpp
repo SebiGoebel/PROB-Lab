@@ -14,10 +14,7 @@
 #include <algorithm>
 
 //Hyperparameter
-#define anzSamples 100
-
-#define nurMotionModel true // wenn true --> zeigt nur das ausgewählte Motion Model an
-                            // ACHTUNG: wenn true --> es wird nicht resamplet
+#define anzSamples 1000
 
 //sample_motion_model_velocity
 #define alpha_1 0.8
@@ -28,8 +25,6 @@
 #define alpha_6 0.6
 
 //sample_motion_model_odometry
-#define motionModelOdom true // decides which motionmodel should be taken
-                             // [true --> Odom; false --> Motion Command]
 #define alpha_odom_1 1.0
 #define alpha_odom_2 1.0
 #define alpha_odom_3 1.0
@@ -41,7 +36,7 @@
 #define initialX 0.5
 #define initialY 0.5
 #define initialTH 0.0
-#define initialPosesNormalverteilt false // bei alles sensor models die nur mit odom arbeiten
+#define initialPosesNormalverteilt true // bei alles sensor models die nur mit odom arbeiten
                                          // ist es notwendig die initial pose zu kennen
                                          // --> muss deshalb auf false gesetzt werden
 
@@ -128,11 +123,6 @@ struct Odom{
     double x;
     double y;
     double th;
-
-    double x_d1;
-    double y_d1;
-    double th_d1;
-
     double x_vel;
     //double y_vel;
     double th_vel;
@@ -199,7 +189,6 @@ public:
     // callback funktionen
     void callback_cmd_vel(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg);
     void callback_odom(const nav_msgs::Odometry::ConstPtr& odom_msg);
-    void callback_odom_motion(const nav_msgs::Odometry::ConstPtr& odom_msg);
     void callback_laser(const sensor_msgs::LaserScan::ConstPtr& laser_msg);
     void callback_grid(const nav_msgs::OccupancyGrid::ConstPtr& grid_msg);
 
@@ -284,9 +273,6 @@ Filter::Filter(){
     o_default.x = initialX;
     o_default.y = initialY;
     o_default.th = initialTH;
-    o_default.x_d1 = initialX;
-    o_default.y_d1 = initialY;
-    o_default.th_d1 = initialTH;
     o_default.x_vel = 0.0;
     //o_default.y_vel = 0.0;
     o_default.th_vel = 0.0;
@@ -416,40 +402,30 @@ Sample Filter::sample_motion_model_this(Sample sample_old)
 
 Sample Filter::sample_motion_model_odometry(Sample sample_old){
 
-    // Buch Seite 110
     // δ == delta
 
-    double toleranz = 0.01;
+    double delta_rot_1 = 0.0;
+    double delta_trans = 0.0;
+    double delta_rot_2 = 0.0;
 
-    if(this->odom_.x > (initialX + toleranz) || this->odom_.x < (initialX - toleranz) || this->odom_.y > (initialY + toleranz) || this->odom_.y < (initialY - toleranz) || this->odom_.th > (initialTH + toleranz) || this->odom_.th < (initialTH - toleranz)){
+    double variance1 = alpha_odom_1 * delta_rot_1 + alpha_odom_2 * delta_trans;
+    double variance2 = alpha_odom_3 * delta_trans + alpha_odom_4 * (delta_rot_1 + delta_rot_2);
+    double variance3 = alpha_odom_1 * delta_rot_2 + alpha_odom_2 * delta_trans;
 
-        double delta_rot_1 = atan2((this->odom_.y - this->odom_.y_d1), (this->odom_.x - this->odom_.x_d1)) - this->odom_.th_d1;
-        double delta_trans = sqrt(pow((this->odom_.x_d1 - this->odom_.x), 2) + pow((this->odom_.y_d1 - this->odom_.y), 2));
-        double delta_rot_2 = this->odom_.th - this->odom_.th_d1 - delta_rot_1;
+    double delta_rot_1_hat = delta_rot_1 - sampling(variance1);
+    double delta_trans_hat = delta_trans - sampling(variance2);
+    double delta_rot_2_hat = delta_rot_2 - sampling(variance3);
 
-        double variance1 = alpha_odom_1 * abs(delta_rot_1) + alpha_odom_2 * abs(delta_trans);
-        double variance2 = alpha_odom_3 * abs(delta_trans) + alpha_odom_4 * (abs(delta_rot_1) + abs(delta_rot_2));
-        double variance3 = alpha_odom_1 * abs(delta_rot_2) + alpha_odom_2 * abs(delta_trans);
+    double x_ = sample_old.x + delta_trans_hat * cos(sample_old.th + delta_rot_1_hat);
+    double y_ = sample_old.y + delta_trans_hat * sin(sample_old.th + delta_rot_1_hat);
+    double th_ = sample_old.th + delta_rot_1_hat + delta_rot_2_hat;
 
-        double delta_rot_1_hat = delta_rot_1 - sampling(variance1);
-        double delta_trans_hat = delta_trans - sampling(variance2);
-        double delta_rot_2_hat = delta_rot_2 - sampling(variance3);
-
-        double x_ = sample_old.x + 2.5 * delta_trans_hat * cos(sample_old.th + delta_rot_1_hat);
-        double y_ = sample_old.y + 2.5 * delta_trans_hat * sin(sample_old.th + delta_rot_1_hat);
-        double th_ = sample_old.th + 2.5 * delta_rot_1_hat + delta_rot_2_hat;
-
-        // speichern in Sample-struct und return
-        Sample s1;
-        s1.x = x_;
-        s1.y = y_;
-        s1.th = th_;
-        return s1;
-    }
-    else
-    {
-        return sample_old;
-    }
+    // speichern in Sample-struct und return
+    Sample s1;
+    s1.x = x_;
+    s1.y = y_;
+    s1.th = th_;
+    return s1;
 }
 
 // ========================================== Sensor Models ==========================================
@@ -656,13 +632,7 @@ void Filter::algorithmMCL(){
 
     updateOdomSample();
     for(int i = 0; i < anzSamples; i++){
-        if(motionModelOdom){
-            samples_predicted[i] = sample_motion_model_odometry(this->samples_old_[i]);
-        }
-        else
-        {
-            samples_predicted[i] = sample_motion_model_this(this->samples_old_[i]);
-        }
+        samples_predicted[i] = sample_motion_model_this(this->samples_old_[i]);
         samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);
     }
 /*
@@ -678,13 +648,8 @@ void Filter::algorithmMCL(){
 
     // Array übertragen an samples_old_
     for(int i = 0; i < anzSamples; i++){
-        if(nurMotionModel){
-            this->samples_old_[i] = samples_predicted[i]; // nur motion model
-        }
-        else
-        {
-            this->samples_old_[i] = samples_new[i]; // resampling wird übernommen
-        }
+        //this->samples_old_[i] = samples_predicted[i]; // nur motion model
+        this->samples_old_[i] = samples_new[i];
     }
 
     // test print
@@ -715,23 +680,7 @@ void Filter::callback_odom(const nav_msgs::Odometry::ConstPtr& odom_msg){
 	this->odom_.y = odom_msg->pose.pose.position.y;
 
     this->odom_.x_vel = odom_msg->twist.twist.linear.x;
-    this->odom_.th_vel = odom_msg->twist.twist.angular.z;
-    
-    // test print
-    //std::cout << "X: " << this->odom_.x << ", Y: " << this->odom_.y << ", TH: " << this->odom_.th << std::endl;
-}
-
-void Filter::callback_odom_motion(const nav_msgs::Odometry::ConstPtr& odom_msg){
-
-    this->odom_.th_d1 = this->odom_.th;
-    this->odom_.x_d1 = this->odom_.x;
-    this->odom_.y_d1 = this->odom_.y;
-
-    this->odom_.th = tf::getYaw(odom_msg->pose.pose.orientation);
-	this->odom_.x = odom_msg->pose.pose.position.x;
-	this->odom_.y = odom_msg->pose.pose.position.y;
-
-    this->odom_.x_vel = odom_msg->twist.twist.linear.x;
+    //this->odom_.y_vel = odom_msg->twist.twist.linear.y;
     this->odom_.th_vel = odom_msg->twist.twist.angular.z;
     
     // test print
@@ -786,21 +735,9 @@ int main(int argc, char **argv)
 
     // subscribers
     ros::Subscriber sub_cmd_vel = n.subscribe("cmd_vel", 1000, &Filter::callback_cmd_vel, &filter);
-    //ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom, &filter);
-    ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom_motion, &filter);
+    ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom, &filter);
     ros::Subscriber sub_laser = n.subscribe("scan", 1000, &Filter::callback_laser, &filter);
     ros::Subscriber sub_occupancy_grid = n.subscribe("map", 1000, &Filter::callback_grid, &filter);
-/*
-    if(motionModelOdom){
-        ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom, &filter);
-        std::cout << "callback_odom is used" << std::endl;
-    }
-    else
-    {
-        ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom_motion, &filter);
-        std::cout << "callback_odom_motion is used" << std::endl;
-    }
-*/
 
     // publisher
     ros::Publisher pub_particle_cloud = n.advertise<geometry_msgs::PoseArray>("/particlecloud", 10);
@@ -843,8 +780,7 @@ int main(int argc, char **argv)
         // test prints
         std::cout << "----------" << std::endl;
         std::cout << "Time (dt): " << filter.getDt() << std::endl;
-        std::cout << "Odom      X: " << filter.getOdom().x << ", Y: " << filter.getOdom().y << ", TH: " << filter.getOdom().th << std::endl;
-        std::cout << "Odom Old  X: " << filter.getOdom().x_d1 << ", Y: " << filter.getOdom().y_d1 << ", TH: " << (filter.getOdom().th_d1*180/M_PI) << std::endl;
+        std::cout << "Odom      X: " << filter.getOdom().x << ", Y: " << filter.getOdom().y << ", TH: " << (filter.getOdom().th*180/M_PI) << std::endl;
         std::cout << "Odom vels X: " << filter.getOdom().x_vel << ", TH: " << (filter.getOdom().th_vel*180/M_PI) << std::endl;
         std::cout << "          V: " << filter.getU_t().v << ", W: " << filter.getU_t().w << std::endl;
         std::cout << "laserMax: " << laserMaxRange << std::endl;
