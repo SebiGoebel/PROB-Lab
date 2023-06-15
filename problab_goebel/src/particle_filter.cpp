@@ -17,7 +17,7 @@
 
 // ------------ Allgemeine Einstellungen ------------
 
-#define anzSamples 100
+#define anzSamples 5
 
 #define nurMotionModel false // wenn true --> zeigt nur das ausgewählte Motion Model an
                             // ACHTUNG: wenn true --> es wird nicht resamplet
@@ -358,6 +358,8 @@ Filter::Filter(){
         for(int i = 0; i < anzSamples; i++){
             this->samples_old_[i].x = distributionPosition(generator);
             this->samples_old_[i].y = distributionPosition(generator);
+            //this->samples_old_[i].x = initialX;
+            //this->samples_old_[i].y = initialY;
             this->samples_old_[i].th = random_value(-M_PI, M_PI);
             //this->samples_old_[i].th = random_value(-1.0, 1.0);
             this->samples_old_[i].weight = (double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
@@ -524,7 +526,7 @@ Sample Filter::sample_motion_model_odometry(Sample sample_old){
 double Filter::likelihood_field_range_finder_model(Sample sample)
 {
     // wenn keine bewegung alles particles
-    if(this->motion_model_.v > 0.1 || this->motion_model_.v < -0.1 || this->motion_model_.w > 0.1 || this->motion_model_.w < -0.1){
+    if(this->motion_model_.v < 0.1 && this->motion_model_.v > -0.1 && this->motion_model_.w < 0.1 && this->motion_model_.w > -0.1){
         // wenn keine bewegung --> alle particle gleich gewichten
         return (double)(1.0/(double)anzSamples);
     }
@@ -548,7 +550,7 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
             double y_ztk = sample.y + laserScannerPositionY * cos(sample.th) + laserScannerPositionX * sin(sample.th) + this->sensor_model_.laserScan[i] * sin(sample.th + angleInRad);
 
             //std::cout << "sample_x: " << sample.x << ", sample_y: " << sample.y << " sample_th: " << sample.th << std::endl;
-            std::cout << "laser " << i << ": x_ztk: " << x_ztk << " ,y_ztk:" << y_ztk << ", Range: " << this->sensor_model_.laserScan[i] << ", angleInRad: " << angleInRad << std::endl;
+            //std::cout << "laser " << i << ": x_ztk: " << x_ztk << " ,y_ztk:" << y_ztk << ", Range: " << this->sensor_model_.laserScan[i] << ", angleInRad: " << angleInRad << std::endl;
 
             // vielleicht das th vom sensor (i oder angleInRad) berechnen --> float32 angle_increment  # angular distance between measurements [rad]
             // siehe Message definition:
@@ -567,14 +569,15 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
                     minDist = dist_berechnet;
                 }
             }
+
             // Zeile 8 --> berechnen von q (probability)
             probability = probability * (zHit * probabilityDist(minDist, sigmaHit) + (zRand / zMax));
         }
     }
     std::cout << "Prob: " << probability << std::endl;
-    if(probability != 1){
-        exit(0);
-    }
+    //if(probability != 1){
+    //    exit(0);
+    //}
     return probability;
 }
 
@@ -772,6 +775,7 @@ void Filter::algorithmMCL(){
             samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);
         }
     }
+    std::cout << "test" << std::endl;
 /*
     updateOdomSample();
     for(int i = 0; i < anzSamples; i++){
@@ -882,20 +886,24 @@ void Filter::callback_grid(const nav_msgs::OccupancyGrid::ConstPtr& grid_msg){
 
             // befüllen des rayray_castingPoints für alle Zellenmittelpunkte wo nicht unbekannt
             //if(this->map_.data[zeile][spalte] != -1){
-            if(grid_msg->data[index] != -1){
-                double y_value_zeile = ursprung_y - ((this->map_.resolution * zeile) + (this->map_.resolution / 2));
-                double x_value_spalte = ursprung_x - ((this->map_.resolution * spalte) + (this->map_.resolution / 2));
+            if(grid_msg->data[index] != -1 && grid_msg->data[index] != 0){
+
+                //double x_value_spalte = ursprung_x + ((this->map_.resolution * spalte) + (this->map_.resolution / 2));
+                //double y_value_zeile = ursprung_y - ((this->map_.resolution * zeile) + (this->map_.resolution / 2));
+
+                double x_value_spalte = ursprung_x + this->map_.resolution * spalte - this->map_.resolution * this->map_.width / 2 + this->map_.resolution / 2;
+                double y_value_zeile = ursprung_y - this->map_.resolution * zeile + this->map_.resolution * this->map_.height / 2 - this->map_.resolution / 2;
 
                 RayCastingPoint p1;
-                p1.x = x_value_spalte * -1;
-                p1.y = y_value_zeile * -1;
+                p1.x = x_value_spalte;
+                p1.y = y_value_zeile;
 
                 this->map_.ray_castingPoints.push_back(p1);
             }
         }
     }
 
-    //std::cout << "ray_castingPoints.size(): " << this->map_.ray_castingPoints.size() << std::endl;
+    std::cout << "ray_castingPoints.size(): " << this->map_.ray_castingPoints.size() << std::endl;
     //for(int i = 0; i < this->map_.ray_castingPoints.size(); i++){
     //    std::cout << "Punkt " << i << ": [" << this->map_.ray_castingPoints[i].x << ", " << this->map_.ray_castingPoints[i].y << "]" << std::endl;
     //}
