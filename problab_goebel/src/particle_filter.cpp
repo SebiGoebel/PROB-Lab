@@ -14,10 +14,32 @@
 #include <algorithm>
 
 //Hyperparameter
+
+// ------------ Allgemeine Einstellungen ------------
+
 #define anzSamples 100
 
-#define nurMotionModel true // wenn true --> zeigt nur das ausgewählte Motion Model an
+#define nurMotionModel false // wenn true --> zeigt nur das ausgewählte Motion Model an
                             // ACHTUNG: wenn true --> es wird nicht resamplet
+
+#define motionModelOdom false // decides which motionmodel should be taken
+                             // [true --> Odom; false --> Motion Command]
+
+#define normalTriangularDistribution true // decides which distribution should be taken
+                                          // [true --> normal distribution; false --> triangular distribution]
+
+#define initialPosesNormalverteilt false // bei alles sensor models die nur mit odom arbeiten
+                                         // ist es notwendig die initial pose zu kennen
+                                         // --> muss deshalb auf false gesetzt werden
+
+#define sensorModelRangeFinder true // decides which sensormodel should be taken
+                                    // [true --> range_finder; false --> Odom]
+
+#define initialX 0.5
+#define initialY 0.5
+#define initialTH 0.0
+
+// ------------ Motion Models ------------
 
 //sample_motion_model_velocity
 #define alpha_1 0.8
@@ -28,32 +50,41 @@
 #define alpha_6 0.6
 
 //sample_motion_model_odometry
-#define motionModelOdom true // decides which motionmodel should be taken
-                             // [true --> Odom; false --> Motion Command]
-#define alpha_odom_1 1.0
-#define alpha_odom_2 1.0
-#define alpha_odom_3 1.0
-#define alpha_odom_4 1.0
+#define alpha_odom_1 0.1
+#define alpha_odom_2 0.1
+#define alpha_odom_3 0.1
+#define alpha_odom_4 0.1
 
-#define normalTriangularDistribution true // decides which distribution should be taken
-                                          // [true --> normal distribution; false --> triangular distribution]
 
-#define initialX 0.5
-#define initialY 0.5
-#define initialTH 0.0
-#define initialPosesNormalverteilt false // bei alles sensor models die nur mit odom arbeiten
-                                         // ist es notwendig die initial pose zu kennen
-                                         // --> muss deshalb auf false gesetzt werden
+// ------------ Sensor Models ------------
 
 //laserScanner
-double laserMaxRange = 0.0;
-double laserMinRange = 0.0;
 #define laserScannerPositionX 0.0
 #define laserScannerPositionY 0.0
 
+/* AMCL Argumente
+<remap from="scan"                      to="/scan"/>
+    <param name="laser_max_range"           value="3.5"/>
+    <param name="laser_max_beams"           value="180"/>
+    <param name="laser_z_hit"               value="0.5"/>
+    <param name="laser_z_short"             value="0.05"/>
+    <param name="laser_z_max"               value="0.05"/>
+    <param name="laser_z_rand"              value="0.5"/>
+    <param name="laser_sigma_hit"           value="0.2"/>
+    <param name="laser_lambda_short"        value="0.1"/>
+    <param name="laser_likelihood_max_dist" value="2.0"/>
+    <param name="laser_model_type"          value="likelihood_field"/>
+*/
+
+#define zHit 0.5
+#define zShort 0.05
+#define zMax 0.05
+#define zRand 0.5
+#define sigmaHit 0.2
+
 //Map
-int map_height; // 320
-int map_width;  // 320
+int map_height; // Ermittelt => 320
+int map_width;  // Ermittelt => 320
 #define sizeOfMap 320 // 320 * 320
 
 
@@ -103,6 +134,18 @@ double sampling(double variance){
     return randNum;
 }
 
+double probabilityDist(double dist, double sigma){
+
+    // ACHTUNG: simga = σ²
+    
+    double mean = 0.0;
+
+    double exponent = -(pow(dist - mean, 2) / (2 * sigma));
+    double prob = (1 / (sqrt(2 * M_PI * sigma))) * exp(exponent);
+
+    return prob;
+}
+
 // ================= STRUCTS =================
 
 //Sample
@@ -120,6 +163,9 @@ struct U_t{
 };
 
 struct Z_t{
+    double laserMaxRange;
+    double laserMinRange;
+
     //double laserScan[360];
     std::vector<float> laserScan;
 };
@@ -138,11 +184,17 @@ struct Odom{
     double th_vel;
 };
 
+struct RayCastingPoint{
+    double x;
+    double y;
+};
+
 struct Map{
     double resolution;
     int height;
     int width;
-    int data[sizeOfMap][sizeOfMap];
+    //int data[sizeOfMap][sizeOfMap];
+    std::vector<RayCastingPoint> ray_castingPoints; // vector für alle Zellenmittelpunkte 
 };
 
 // ================= Sample --> geometry_msgs::Pose =================
@@ -454,25 +506,74 @@ Sample Filter::sample_motion_model_odometry(Sample sample_old){
 
 // ========================================== Sensor Models ==========================================
 
+/* AMCL Argumente
+<remap from="scan"                      to="/scan"/>
+    <param name="laser_max_range"           value="3.5"/>
+    <param name="laser_max_beams"           value="180"/>
+    <param name="laser_z_hit"               value="0.5"/>
+    <param name="laser_z_short"             value="0.05"/>
+    <param name="laser_z_max"               value="0.05"/>
+    <param name="laser_z_rand"              value="0.5"/>
+    <param name="laser_sigma_hit"           value="0.2"/>
+    <param name="laser_lambda_short"        value="0.1"/>
+    <param name="laser_likelihood_max_dist" value="2.0"/>
+    <param name="laser_model_type"          value="likelihood_field"/>
+*/
+
 // für ein sample
 double Filter::likelihood_field_range_finder_model(Sample sample)
 {
+    // wenn keine bewegung alles particles
+    if(this->motion_model_.v > 0.1 || this->motion_model_.v < -0.1 || this->motion_model_.w > 0.1 || this->motion_model_.w < -0.1){
+        // wenn keine bewegung --> alle particle gleich gewichten
+        return (double)(1.0/(double)anzSamples);
+    }
+
     double probability = 1.0;
+
     for(int i = 0; i < this->sensor_model_.laserScan.size(); i++){ // für alle beams (i = angle of beam)
-        if(this->sensor_model_.laserScan[i] > laserMinRange && this->sensor_model_.laserScan[i] < laserMaxRange){ // check if beam is valid
+        if(this->sensor_model_.laserScan[i] >= this->sensor_model_.laserMinRange && this->sensor_model_.laserScan[i] < this->sensor_model_.laserMaxRange){ // check if beam is valid
             // Grad i umrechnen in rad
-            double angleInRad = i/180*M_PI;
+            double angleInGrad = double(i);
+            double angleInRad = 0.0;
+            if(i <= 180){
+                angleInRad = angleInGrad / 180 * M_PI;
+            }
+            if(i > 180){
+                angleInRad = (angleInGrad-360) / 180 * M_PI;
+            }
+
             // Transforming Scanner to the world frame
             double x_ztk = sample.x + laserScannerPositionX * cos(sample.th) - laserScannerPositionY * sin(sample.th) + this->sensor_model_.laserScan[i] * cos(sample.th + angleInRad);
             double y_ztk = sample.y + laserScannerPositionY * cos(sample.th) + laserScannerPositionX * sin(sample.th) + this->sensor_model_.laserScan[i] * sin(sample.th + angleInRad);
+
+            //std::cout << "sample_x: " << sample.x << ", sample_y: " << sample.y << " sample_th: " << sample.th << std::endl;
+            std::cout << "laser " << i << ": x_ztk: " << x_ztk << " ,y_ztk:" << y_ztk << ", Range: " << this->sensor_model_.laserScan[i] << ", angleInRad: " << angleInRad << std::endl;
 
             // vielleicht das th vom sensor (i oder angleInRad) berechnen --> float32 angle_increment  # angular distance between measurements [rad]
             // siehe Message definition:
             // http://docs.ros.org/en/api/sensor_msgs/html/msg/LaserScan.html
 
             // Zeile 7 --> dist²
+            // start = maxDistanze = Mapdiagonale
+            // kein sqrt() --> dist²
+            //double minDist = pow(this->map_.height * this->map_.resolution, 2) + pow(this->map_.width * this->map_.resolution, 2);
+            double minDist = this->sensor_model_.laserMaxRange;
+            for(int i = 0; i < this->map_.ray_castingPoints.size(); i++){
+                // berechnen der euklidischen Distanz zu jedem validen Punkt (!= -1) --> dist²
+                double dist_berechnet = pow(x_ztk - this->map_.ray_castingPoints[i].x, 2) + pow(y_ztk - this->map_.ray_castingPoints[i].y, 2);
+                // übernehmen des Minimums
+                if(dist_berechnet < minDist){
+                    minDist = dist_berechnet;
+                }
+            }
             // Zeile 8 --> berechnen von q (probability)
+            probability = probability * (zHit * probabilityDist(minDist, sigmaHit) + (zRand / zMax));
         }
+    }
+    std::cout << "Prob: " << probability << std::endl;
+    if(probability != 1){
+        exit(0);
     }
     return probability;
 }
@@ -663,7 +764,13 @@ void Filter::algorithmMCL(){
         {
             samples_predicted[i] = sample_motion_model_this(this->samples_old_[i]);
         }
-        samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);
+        if(sensorModelRangeFinder){
+            samples_predicted[i].weight = likelihood_field_range_finder_model(samples_predicted[i]);
+        }
+        else
+        {
+            samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);
+        }
     }
 /*
     updateOdomSample();
@@ -740,12 +847,12 @@ void Filter::callback_odom_motion(const nav_msgs::Odometry::ConstPtr& odom_msg){
 
 void Filter::callback_laser(const sensor_msgs::LaserScan::ConstPtr& laser_msg){
 
-	laserMaxRange = laser_msg->range_max;
-    laserMinRange = laser_msg->range_min;
+	this->sensor_model_.laserMaxRange = laser_msg->range_max;
+    this->sensor_model_.laserMinRange = laser_msg->range_min;
     this->sensor_model_.laserScan = laser_msg->ranges;
     
     // test print
-    //std::cout << "laserMax: " << laserMaxRange << std::endl;
+    //std::cout << "laserMax: " << this->sensor_model_.laserMaxRange << std::endl;
     //for(int i = 0; i < this->sensor_model_.laserScan.size(); i++){
     //    std::cout << "range " << i << ": " << this->sensor_model_.laserScan[i] << std::endl;
     //}
@@ -762,15 +869,37 @@ void Filter::callback_grid(const nav_msgs::OccupancyGrid::ConstPtr& grid_msg){
     map_height = grid_msg->info.height;
     map_width = grid_msg->info.width;
 
+    // Ursprung [0, 0] --> liegt im Mittelpunkt der Map --> [160, 160] = sizeOfMap / 2 = 8m / 0.05res
+    // (8m = x-Richtung, 8m = -x-Richtung, 8m = y-Richtung, 8m = -y-Richtung)
+    double ursprung_x = (this->map_.width * this->map_.resolution / 2);
+    double ursprung_y = (this->map_.height * this->map_.resolution / 2);
+
     // kopieren des occupancy grids in mein 2D Array
     for(int zeile = 0; zeile < sizeOfMap; zeile++){
         for(int spalte = 0; spalte < sizeOfMap; spalte++){
             int index = zeile * sizeOfMap + spalte;
-            this->map_.data[zeile][spalte] = grid_msg->data[index];
+            //this->map_.data[zeile][spalte] = grid_msg->data[index];
+
+            // befüllen des rayray_castingPoints für alle Zellenmittelpunkte wo nicht unbekannt
+            //if(this->map_.data[zeile][spalte] != -1){
+            if(grid_msg->data[index] != -1){
+                double y_value_zeile = ursprung_y - ((this->map_.resolution * zeile) + (this->map_.resolution / 2));
+                double x_value_spalte = ursprung_x - ((this->map_.resolution * spalte) + (this->map_.resolution / 2));
+
+                RayCastingPoint p1;
+                p1.x = x_value_spalte * -1;
+                p1.y = y_value_zeile * -1;
+
+                this->map_.ray_castingPoints.push_back(p1);
+            }
         }
     }
 
-    
+    //std::cout << "ray_castingPoints.size(): " << this->map_.ray_castingPoints.size() << std::endl;
+    //for(int i = 0; i < this->map_.ray_castingPoints.size(); i++){
+    //    std::cout << "Punkt " << i << ": [" << this->map_.ray_castingPoints[i].x << ", " << this->map_.ray_castingPoints[i].y << "]" << std::endl;
+    //}
+
     // test print
     //std::cout << "res: " << this->map_.resolution << ", height: " << this->map_.height << ", width: " << this->map_.width << std::endl;
 }
@@ -847,8 +976,8 @@ int main(int argc, char **argv)
         std::cout << "Odom Old  X: " << filter.getOdom().x_d1 << ", Y: " << filter.getOdom().y_d1 << ", TH: " << (filter.getOdom().th_d1*180/M_PI) << std::endl;
         std::cout << "Odom vels X: " << filter.getOdom().x_vel << ", TH: " << (filter.getOdom().th_vel*180/M_PI) << std::endl;
         std::cout << "          V: " << filter.getU_t().v << ", W: " << filter.getU_t().w << std::endl;
-        std::cout << "laserMax: " << laserMaxRange << std::endl;
-        std::cout << "laserMin: " << laserMinRange << std::endl;
+        std::cout << "laserMax: " << filter.getZ_t().laserMaxRange << std::endl;
+        std::cout << "laserMin: " << filter.getZ_t().laserMinRange << std::endl;
         std::cout << "map_height: " << map_height << std::endl;
         std::cout << "map_width: " << map_width << std::endl;
 
