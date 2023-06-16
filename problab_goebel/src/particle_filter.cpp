@@ -82,7 +82,7 @@ int counter = 0;
 #define zShort 0.05
 #define zMax 10.0
 #define zRand 0.01
-#define sigmaHit 0.8
+#define sigmaHit 0.8 // 0.4 auch sehr gut aber relativ agresiv
 
 //Map
 int map_height; // Ermittelt => 320
