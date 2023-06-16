@@ -13,11 +13,13 @@
 #include <cmath>
 #include <algorithm>
 
+int counter = 0;
+
 //Hyperparameter
 
 // ------------ Allgemeine Einstellungen ------------
 
-#define anzSamples 5
+#define anzSamples 25
 
 #define nurMotionModel false // wenn true --> zeigt nur das ausgewählte Motion Model an
                             // ACHTUNG: wenn true --> es wird nicht resamplet
@@ -28,7 +30,7 @@
 #define normalTriangularDistribution true // decides which distribution should be taken
                                           // [true --> normal distribution; false --> triangular distribution]
 
-#define initialPosesNormalverteilt false // bei alles sensor models die nur mit odom arbeiten
+#define initialPosesNormalverteilt true // bei alles sensor models die nur mit odom arbeiten
                                          // ist es notwendig die initial pose zu kennen
                                          // --> muss deshalb auf false gesetzt werden
 
@@ -78,9 +80,9 @@
 
 #define zHit 0.5
 #define zShort 0.05
-#define zMax 0.05
-#define zRand 0.5
-#define sigmaHit 0.2
+#define zMax 10.0
+#define zRand 0.01
+#define sigmaHit 0.8
 
 //Map
 int map_height; // Ermittelt => 320
@@ -187,14 +189,15 @@ struct Odom{
 struct RayCastingPoint{
     double x;
     double y;
+    int mapWert;
 };
 
 struct Map{
     double resolution;
     int height;
     int width;
-    //int data[sizeOfMap][sizeOfMap];
-    std::vector<RayCastingPoint> ray_castingPoints; // vector für alle Zellenmittelpunkte 
+    RayCastingPoint ray_castingPoints_2D[sizeOfMap][sizeOfMap];
+    std::vector<RayCastingPoint> ray_castingPoints; // vector für alle Zellenmittelpunkte
 };
 
 // ================= Sample --> geometry_msgs::Pose =================
@@ -358,10 +361,8 @@ Filter::Filter(){
         for(int i = 0; i < anzSamples; i++){
             this->samples_old_[i].x = distributionPosition(generator);
             this->samples_old_[i].y = distributionPosition(generator);
-            //this->samples_old_[i].x = initialX;
-            //this->samples_old_[i].y = initialY;
-            this->samples_old_[i].th = random_value(-M_PI, M_PI);
-            //this->samples_old_[i].th = random_value(-1.0, 1.0);
+            //this->samples_old_[i].th = random_value(-M_PI, M_PI);
+            this->samples_old_[i].th = random_value(-1.0, 1.0);
             this->samples_old_[i].weight = (double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
         }
     }
@@ -532,6 +533,8 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
     }
 
     double probability = 1.0;
+    
+    //double checkVar = sqrt(pow((this->map_.resolution/2),2) + pow((this->map_.resolution/2),2));
 
     for(int i = 0; i < this->sensor_model_.laserScan.size(); i++){ // für alle beams (i = angle of beam)
         if(this->sensor_model_.laserScan[i] >= this->sensor_model_.laserMinRange && this->sensor_model_.laserScan[i] < this->sensor_model_.laserMaxRange){ // check if beam is valid
@@ -558,24 +561,58 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
 
             // Zeile 7 --> dist²
             // start = maxDistanze = Mapdiagonale
-            // kein sqrt() --> dist²
             //double minDist = pow(this->map_.height * this->map_.resolution, 2) + pow(this->map_.width * this->map_.resolution, 2);
-            double minDist = this->sensor_model_.laserMaxRange;
-            for(int i = 0; i < this->map_.ray_castingPoints.size(); i++){
+            double minDist_2 = this->sensor_model_.laserMaxRange;
+
+            //int checkrayCastingPoint_index = 0;
+            //int checkrayCastingPoint_index_X = 0;
+            //int checkrayCastingPoint_index_Y = 0;
+
+            for(int j = 0; j < this->map_.ray_castingPoints.size(); j++){
                 // berechnen der euklidischen Distanz zu jedem validen Punkt (!= -1) --> dist²
-                double dist_berechnet = pow(x_ztk - this->map_.ray_castingPoints[i].x, 2) + pow(y_ztk - this->map_.ray_castingPoints[i].y, 2);
+                double dist_berechnet = pow((x_ztk - this->map_.ray_castingPoints[j].x), 2) + pow((y_ztk - this->map_.ray_castingPoints[j].y), 2);
                 // übernehmen des Minimums
-                if(dist_berechnet < minDist){
-                    minDist = dist_berechnet;
+                if(dist_berechnet < minDist_2){
+                    minDist_2 = dist_berechnet;
+
+                    // nur fürs printen
+                    //checkrayCastingPoint_index = j;
                 }
             }
 
+            //for(int zeile = 0; zeile < sizeOfMap; zeile++){
+            //    for(int spalte = 0; spalte < sizeOfMap; spalte++){
+            //        double dist_berechnet = sqrt(pow(x_ztk - this->map_.ray_castingPoints_2D[zeile][spalte].x, 2) + pow(y_ztk - this->map_.ray_castingPoints_2D[zeile][spalte].y, 2));
+            //        if(dist_berechnet < minDist){
+            //            minDist = dist_berechnet;
+            //
+            //            checkrayCastingPoint_index_X = spalte;
+            //            checkrayCastingPoint_index_Y = zeile;
+            //        }
+            //    }
+            //}
+
+            // check ob mehr als diagonale
+            //if(minDist > checkVar){
+            //    counter++;
+            //    std::cout << "ACHTUNG: minDist>" << checkVar << " !!! ";
+            //}
+
+            // test print für 2D-Array
+            //std::cout << "Winkel: " << i << " minDist: " << minDist << ", x_ztk: " << x_ztk << ", y_ztk:" << y_ztk
+            //<< ", rayCastPoint X: " << this->map_.ray_castingPoints_2D[checkrayCastingPoint_index_Y][checkrayCastingPoint_index_X].x << ", rayCastPoint Y: " << this->map_.ray_castingPoints_2D[checkrayCastingPoint_index_Y][checkrayCastingPoint_index_X].y << std::endl;
+            
+            // test print für vector
+            //std::cout << "Winkel: " << i << " minDist: " << minDist << ", x_ztk: " << x_ztk << ", y_ztk:" << y_ztk
+            //<< ", rayCastPoint X: " << this->map_.ray_castingPoints[checkrayCastingPoint_index].x << ", rayCastPoint Y: " << this->map_.ray_castingPoints[checkrayCastingPoint_index].y << " Mapwert: " << this->map_.ray_castingPoints[checkrayCastingPoint_index].mapWert << std::endl;
+
             // Zeile 8 --> berechnen von q (probability)
-            probability = probability * (zHit * probabilityDist(minDist, sigmaHit) + (zRand / zMax));
+            probability = probability * (zHit * probabilityDist(minDist_2, sigmaHit) + (zRand / zMax));
         }
     }
-    std::cout << "Prob: " << probability << std::endl;
+    //std::cout << "Prob: " << probability << std::endl;
     //if(probability != 1){
+    //    std::cout << "Counter: " << counter << "    checkerVar: " << checkVar << " wie viele laserScanner: " << counterCheck << std::endl;
     //    exit(0);
     //}
     return probability;
@@ -882,28 +919,56 @@ void Filter::callback_grid(const nav_msgs::OccupancyGrid::ConstPtr& grid_msg){
     for(int zeile = 0; zeile < sizeOfMap; zeile++){
         for(int spalte = 0; spalte < sizeOfMap; spalte++){
             int index = zeile * sizeOfMap + spalte;
+            
             //this->map_.data[zeile][spalte] = grid_msg->data[index];
 
             // befüllen des rayray_castingPoints für alle Zellenmittelpunkte wo nicht unbekannt
             //if(this->map_.data[zeile][spalte] != -1){
-            if(grid_msg->data[index] != -1 && grid_msg->data[index] != 0){
+            //if(grid_msg->data[index] != -1 && grid_msg->data[index] != 0){ // --> bei einem && kommt ein Fehler !!!!!!!!!!!!!!
+            if(grid_msg->data[index] != -1){
+                if(grid_msg->data[index] != 0){
+                    double x_value_spalte = spalte * this->map_.resolution - ursprung_x + (this->map_.resolution / 2);
+                    double y_value_zeile  = zeile  * this->map_.resolution - ursprung_y + (this->map_.resolution / 2);
 
-                //double x_value_spalte = ursprung_x + ((this->map_.resolution * spalte) + (this->map_.resolution / 2));
-                //double y_value_zeile = ursprung_y - ((this->map_.resolution * zeile) + (this->map_.resolution / 2));
+                    RayCastingPoint p1;
+                    p1.x = x_value_spalte;
+                    p1.y = y_value_zeile;
+                    p1.mapWert = grid_msg->data[index];
 
-                double x_value_spalte = ursprung_x + this->map_.resolution * spalte - this->map_.resolution * this->map_.width / 2 + this->map_.resolution / 2;
-                double y_value_zeile = ursprung_y - this->map_.resolution * zeile + this->map_.resolution * this->map_.height / 2 - this->map_.resolution / 2;
-
-                RayCastingPoint p1;
-                p1.x = x_value_spalte;
-                p1.y = y_value_zeile;
-
-                this->map_.ray_castingPoints.push_back(p1);
+                    this->map_.ray_castingPoints.push_back(p1);
+                }
             }
+            /*
+            // für 2D Array
+            double x_val = -ursprung_x + spalte * this->map_.resolution + (this->map_.resolution / 2);
+            double y_val =  ursprung_y - zeile  * this->map_.resolution - (this->map_.resolution / 2);
+
+            RayCastingPoint p2;
+            p2.x = x_val;
+            p2.y = y_val;
+            p2.mapWert = grid_msg->data[index];
+
+            this->map_.ray_castingPoints_2D[zeile][spalte] = p2;
+            */
         }
     }
 
-    std::cout << "ray_castingPoints.size(): " << this->map_.ray_castingPoints.size() << std::endl;
+    //for(int zeile = 0; zeile < sizeOfMap; zeile++){
+    //    for(int spalte = 0; spalte < sizeOfMap; spalte++){
+    //        if(this->map_.ray_castingPoints_2D[zeile][spalte].x <= 2.28 && this->map_.ray_castingPoints_2D[zeile][spalte].x >= 2.27){
+    //            std::cout << "Punkt: X: " << spalte << " Y: " << zeile << " X_KS: " << this->map_.ray_castingPoints_2D[zeile][spalte].x << " Y_KS: " << this->map_.ray_castingPoints_2D[zeile][spalte].y << " MapWert = " << this->map_.ray_castingPoints_2D[zeile][spalte].mapWert <<  std::endl;
+    //        }
+    //    }
+    //}
+    
+
+    //for(int i = 0; i < this->map_.ray_castingPoints.size(); i++){
+    //    if(this->map_.ray_castingPoints[i].x <= 2.23 && this->map_.ray_castingPoints[i].x >= 2.22){
+    //        std::cout << i << " X: " << this->map_.ray_castingPoints[i].x << " Y: " << this->map_.ray_castingPoints[i].y << " MapWert = " << this->map_.ray_castingPoints[i].mapWert << std::endl;
+    //    }
+    //}
+    //exit(0);
+    
     //for(int i = 0; i < this->map_.ray_castingPoints.size(); i++){
     //    std::cout << "Punkt " << i << ": [" << this->map_.ray_castingPoints[i].x << ", " << this->map_.ray_castingPoints[i].y << "]" << std::endl;
     //}

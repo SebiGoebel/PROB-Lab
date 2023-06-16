@@ -221,6 +221,9 @@ target_link_libraries(test3Node ${catkin_LIBRARIES})
 add_executable(particle_filter_Cmd_Odom src/particle_filter_Cmd_Odom.cpp)
 target_link_libraries(particle_filter_Cmd_Odom ${catkin_LIBRARIES})
 
+add_executable(particle_filter_v2 src/particle_filter_v2.cpp)
+target_link_libraries(particle_filter_v2 ${catkin_LIBRARIES})
+
 add_executable(goal_pub src/goal_pub.cpp)
 target_link_libraries(goal_pub ${catkin_LIBRARIES})
 #add_dependencies(goal_pub problab_goebel_generate_messages_cpp)
