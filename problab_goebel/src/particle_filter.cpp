@@ -84,7 +84,8 @@
 #define zShort 0.05
 #define zMax 10.0
 #define zRand 0.01
-#define sigmaHit 0.2 // 0.4 auch sehr gut aber relativ agresiv
+#define sigmaHit 0.8 // 0.4 auch sehr gut aber relativ agresiv
+                     // 0.2 von amcl
 
 //Map
 int map_height; // Ermittelt => 320
