@@ -13,13 +13,11 @@
 #include <cmath>
 #include <algorithm>
 
-int counter = 0;
-
 //Hyperparameter
 
 // ------------ Allgemeine Einstellungen ------------
 
-#define anzSamples 25
+#define anzSamples 100
 
 #define nurMotionModel false // wenn true --> zeigt nur das ausgewählte Motion Model an
                             // ACHTUNG: wenn true --> es wird nicht resamplet
@@ -64,6 +62,8 @@ int counter = 0;
 #define laserScannerPositionX 0.0
 #define laserScannerPositionY 0.0
 
+#define jederWieVielteBeam 20
+
 /* AMCL Argumente
 <remap from="scan"                      to="/scan"/>
     <param name="laser_max_range"           value="3.5"/>
@@ -82,7 +82,7 @@ int counter = 0;
 #define zShort 0.05
 #define zMax 10.0
 #define zRand 0.01
-#define sigmaHit 0.8 // 0.4 auch sehr gut aber relativ agresiv
+#define sigmaHit 0.2 // 0.4 auch sehr gut aber relativ agresiv
 
 //Map
 int map_height; // Ermittelt => 320
@@ -361,8 +361,8 @@ Filter::Filter(){
         for(int i = 0; i < anzSamples; i++){
             this->samples_old_[i].x = distributionPosition(generator);
             this->samples_old_[i].y = distributionPosition(generator);
-            //this->samples_old_[i].th = random_value(-M_PI, M_PI);
-            this->samples_old_[i].th = random_value(-1.0, 1.0);
+            this->samples_old_[i].th = random_value(-M_PI, M_PI);
+            //this->samples_old_[i].th = random_value(-1.0, 1.0);
             this->samples_old_[i].weight = (double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
         }
     }
@@ -537,7 +537,7 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
     //double checkVar = sqrt(pow((this->map_.resolution/2),2) + pow((this->map_.resolution/2),2));
 
     for(int i = 0; i < this->sensor_model_.laserScan.size(); i++){ // für alle beams (i = angle of beam)
-        if(this->sensor_model_.laserScan[i] >= this->sensor_model_.laserMinRange && this->sensor_model_.laserScan[i] < this->sensor_model_.laserMaxRange){ // check if beam is valid
+        if(this->sensor_model_.laserScan[i] >= this->sensor_model_.laserMinRange && this->sensor_model_.laserScan[i] < this->sensor_model_.laserMaxRange && i % jederWieVielteBeam == 0){ // check if beam is valid
             // Grad i umrechnen in rad
             double angleInGrad = double(i);
             double angleInRad = 0.0;
