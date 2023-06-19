@@ -66,4 +66,7 @@
 
     <!-- <node type="rviz" name="rviz" pkg="rviz"/> -->
     <node type="rviz" name="rviz" pkg="rviz" args="-d $(find problab_goebel)/config/rviz_config.rviz"/>
+
+    <!-- eigener particle filter -->
+    <!--<node type="particle_filter" name="particle_filter" pkg="problab_goebel" />-->
 </launch>

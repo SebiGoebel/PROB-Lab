@@ -35,6 +35,8 @@
 #define sensorModelRangeFinder true // decides which sensormodel should be taken
                                     // [true --> range_finder; false --> Odom]
 
+#define clearingPoses true // poses werden vom letzen time-step in rviz gelöscht
+
 #define initialX 0.5
 #define initialY 0.5
 #define initialTH 0.0
@@ -42,12 +44,12 @@
 // ------------ Motion Models ------------
 
 //sample_motion_model_velocity
-#define alpha_1 0.8
-#define alpha_2 0.2
-#define alpha_3 0.2
-#define alpha_4 0.8
-#define alpha_5 0.2
-#define alpha_6 0.6
+#define alpha_1 0.2 //0.6 //0.2
+#define alpha_2 0.8 //0.8 //0.8
+#define alpha_3 0.2 //0.6 //0.2
+#define alpha_4 0.8 //0.8 //0.8
+#define alpha_5 0.4 //0.5 //0.2
+#define alpha_6 0.6 //0.7 //0.6
 
 //sample_motion_model_odometry
 #define alpha_odom_1 0.1
@@ -361,8 +363,8 @@ Filter::Filter(){
         for(int i = 0; i < anzSamples; i++){
             this->samples_old_[i].x = distributionPosition(generator);
             this->samples_old_[i].y = distributionPosition(generator);
-            this->samples_old_[i].th = random_value(-M_PI, M_PI);
-            //this->samples_old_[i].th = random_value(-1.0, 1.0);
+            //this->samples_old_[i].th = random_value(-M_PI, M_PI);
+            this->samples_old_[i].th = random_value(-1.0, 1.0);
             this->samples_old_[i].weight = (double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
         }
     }
@@ -482,17 +484,21 @@ Sample Filter::sample_motion_model_odometry(Sample sample_old){
         double delta_trans = sqrt(pow((this->odom_.x_d1 - this->odom_.x), 2) + pow((this->odom_.y_d1 - this->odom_.y), 2));
         double delta_rot_2 = this->odom_.th - this->odom_.th_d1 - delta_rot_1;
 
-        double variance1 = alpha_odom_1 * abs(delta_rot_1) + alpha_odom_2 * abs(delta_trans);
-        double variance2 = alpha_odom_3 * abs(delta_trans) + alpha_odom_4 * (abs(delta_rot_1) + abs(delta_rot_2));
-        double variance3 = alpha_odom_1 * abs(delta_rot_2) + alpha_odom_2 * abs(delta_trans);
+        //double variance1 = alpha_odom_1 * abs(delta_rot_1) + alpha_odom_2 * abs(delta_trans);
+        //double variance2 = alpha_odom_3 * abs(delta_trans) + alpha_odom_4 * (abs(delta_rot_1) + abs(delta_rot_2));
+        //double variance3 = alpha_odom_1 * abs(delta_rot_2) + alpha_odom_2 * abs(delta_trans);
+
+        double variance1 = alpha_odom_1 * delta_rot_1 + alpha_odom_2 * delta_trans;
+        double variance2 = alpha_odom_3 * delta_trans + alpha_odom_4 * (delta_rot_1 + delta_rot_2);
+        double variance3 = alpha_odom_1 * delta_rot_2 + alpha_odom_2 * delta_trans;
 
         double delta_rot_1_hat = delta_rot_1 - sampling(variance1);
         double delta_trans_hat = delta_trans - sampling(variance2);
         double delta_rot_2_hat = delta_rot_2 - sampling(variance3);
 
-        double x_ = sample_old.x + delta_trans_hat * cos(sample_old.th + delta_rot_1_hat);
-        double y_ = sample_old.y + delta_trans_hat * sin(sample_old.th + delta_rot_1_hat);
-        double th_ = sample_old.th + delta_rot_1_hat + delta_rot_2_hat;
+        double x_ = sample_old.x + 10.0 * delta_trans_hat * cos(sample_old.th + delta_rot_1_hat);
+        double y_ = sample_old.y + 10.0 * delta_trans_hat * sin(sample_old.th + delta_rot_1_hat);
+        double th_ = sample_old.th + 2.0 * delta_rot_1_hat + 2.0 * delta_rot_2_hat;
 
         // speichern in Sample-struct und return
         Sample s1;
@@ -1031,7 +1037,9 @@ int main(int argc, char **argv)
         filter.setTime_stamp_old(convertingTime2Double(time));
 
         // clearing pose array
-        sample_poses.poses.clear();
+        if(clearingPoses){
+            sample_poses.poses.clear();
+        }
 
         // MCL Angorithm
         filter.algorithmMCL();
