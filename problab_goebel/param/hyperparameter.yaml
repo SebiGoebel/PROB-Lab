@@ -1,0 +1,68 @@
+# ================== Hyperparameter ================
+
+# ------------ Allgemeine Einstellungen ------------
+anzSamples: 100                    # anzahl der Samples
+
+nurMotionModel: false              # wenn true --> zeigt nur das ausgewählte Motion Model an
+                                   # ACHTUNG: wenn true --> es wird nicht resamplet
+
+motionModelOdom: false             # decides which motionmodel should be taken
+                                   # [true --> Odom; false --> Motion Command]
+
+normalTriangularDistribution: true # decides which distribution should be taken
+                                   # [true --> normal distribution; false --> triangular distribution]
+
+initialPosesNormalverteilt: true   # decides if the initial poses should be distributed
+                                   # [true --> normal distribution; false --> all samples start at the initial pose]
+
+sensorModelRangeFinder: true       # decides which sensormodel should be taken
+                                   # [true --> range_finder; false --> Odom]
+
+clearingPoses: true                # poses werden vom letzen time-step in rviz gelöscht
+
+# ------------ initiale Pose ------------
+initialX: 0.5
+initialY: 0.5
+initialTH: 0.0
+
+# ------------ Motion Models ------------
+# --- sample_motion_model_velocity ---
+alpha_1: 0.2 # 0.6  # 0.2
+alpha_2: 0.8 # 0.8  # 0.8
+alpha_3: 0.2 # 0.6  # 0.2
+alpha_4: 0.8 # 0.8  # 0.8
+alpha_5: 0.4 # 0.5  # 0.2
+alpha_6: 0.6 # 0.7  # 0.6
+
+# --- sample_motion_model_odometry ---
+alpha_odom_1: 2.5
+alpha_odom_2: 2.5
+alpha_odom_3: 2.5
+alpha_odom_4: 2.5
+
+# ------------ Sensor Models ------------
+laserScannerPositionX: 0.0 # Position des Laserscanners am Roboter in x-Richtung
+laserScannerPositionY: 0.0 # Position des Laserscanners am Roboter in y-Richtung
+
+jederWieVielteBeam: 20     # gibt an jeder wie vielte Beam des Scanners verwendet werden soll 
+
+zHit: 0.5
+zShort: 0.05
+zMax: 10.0
+zRand: 0.01
+sigmaHit: 0.2 # 0.4 auch sehr gut aber relativ aggressiv
+              # 0.2 wie bei amcl
+              # 0.8 nicht sehr aggressiv
+
+#AMCL Argumente
+#<remap from="scan"                      to="/scan"/>
+#    <param name="laser_max_range"           value="3.5"/>
+#    <param name="laser_max_beams"           value="180"/>
+#    <param name="laser_z_hit"               value="0.5"/>
+#    <param name="laser_z_short"             value="0.05"/>
+#    <param name="laser_z_max"               value="0.05"/>
+#    <param name="laser_z_rand"              value="0.5"/>
+#    <param name="laser_sigma_hit"           value="0.2"/>
+#    <param name="laser_lambda_short"        value="0.1"/>
+#    <param name="laser_likelihood_max_dist" value="2.0"/>
+#    <param name="laser_model_type"          value="likelihood_field"/>
