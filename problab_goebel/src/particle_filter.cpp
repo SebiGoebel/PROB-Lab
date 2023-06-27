@@ -17,7 +17,7 @@
 
 // ------------ Allgemeine Einstellungen ------------
 
-#define anzSamples 100
+#define anzSamples 300
 
 #define nurMotionModel false // wenn true --> zeigt nur das ausgewählte Motion Model an
                             // ACHTUNG: wenn true --> es wird nicht resamplet
@@ -44,12 +44,12 @@
 // ------------ Motion Models ------------
 
 //sample_motion_model_velocity
-#define alpha_1 0.2 //0.6 //0.2
-#define alpha_2 0.8 //0.8 //0.8
-#define alpha_3 0.2 //0.6 //0.2
-#define alpha_4 0.8 //0.8 //0.8
-#define alpha_5 0.4 //0.5 //0.2
-#define alpha_6 0.6 //0.7 //0.6
+#define alpha_1 0.2 //2.8 //2.5 //0.6 //0.2
+#define alpha_2 0.8 //3.4 //2.5 //0.8 //0.8
+#define alpha_3 0.2 //2.8 //2.5 //0.6 //0.2
+#define alpha_4 0.8 //3.4 //2.5 //0.8 //0.8
+#define alpha_5 0.4 //3.1 //2.5 //0.5 //0.2
+#define alpha_6 0.6 //3.2 //2.5 //0.7 //0.6
 
 //sample_motion_model_odometry
 #define alpha_odom_1 2.5
@@ -82,10 +82,12 @@
 
 #define zHit 0.5
 #define zShort 0.05
-#define zMax 10.0
+#define zMax 3.5
 #define zRand 0.01
-#define sigmaHit 0.2 // 0.4 auch sehr gut aber relativ agresiv
-                     // 0.2 von amcl
+#define sigmaHit 0.2 
+    
+                                              // 0.4 auch sehr gut aber relativ agresiv
+                                                                        // 0.2 von amcl
 
 //Map
 int map_height; // Ermittelt => 320
@@ -364,8 +366,8 @@ Filter::Filter(){
         for(int i = 0; i < anzSamples; i++){
             this->samples_old_[i].x = distributionPosition(generator);
             this->samples_old_[i].y = distributionPosition(generator);
-            //this->samples_old_[i].th = random_value(-M_PI, M_PI);
-            this->samples_old_[i].th = random_value(-1.0, 1.0);
+            this->samples_old_[i].th = random_value(-M_PI, M_PI);
+            //this->samples_old_[i].th = random_value(-1.0, 1.0);
             this->samples_old_[i].weight = (double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
         }
     }
@@ -813,17 +815,12 @@ void Filter::algorithmMCL(){
         else
         {
             samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);
+            //samples_predicted[i].weight = odom_vel_sensor_model(samples_predicted[i], this->samples_old_[i]);
+            //samples_predicted[i].weight = odom_vel_sensor_model_linearer_regler(samples_predicted[i], this->samples_old_[i]);
         }
     }
     std::cout << "test" << std::endl;
-/*
-    updateOdomSample();
-    for(int i = 0; i < anzSamples; i++){
-        // vielleicht weighting in einem eigenen loop
-        //samples_predicted[i].weight = odom_vel_sensor_model(samples_predicted[i], this->samples_old_[i]);
-        samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);
-    }
-*/
+
     // Resampling
     samples_new = low_variance_sampler(samples_predicted);
 
