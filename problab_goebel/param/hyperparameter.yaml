@@ -1,7 +1,7 @@
 # ================== Hyperparameter ================
 
 # ------------ Allgemeine Einstellungen ------------
-anzSamples: 100                    # anzahl der Samples
+anzSamples: 300                    # anzahl der Samples
 
 nurMotionModel: false              # wenn true --> zeigt nur das ausgewählte Motion Model an
                                    # ACHTUNG: wenn true --> es wird nicht resamplet
@@ -16,7 +16,7 @@ initialPosesNormalverteilt: true   # decides if the initial poses should be dist
                                    # [true --> normal distribution; false --> all samples start at the initial pose]
 
 sensorModelRangeFinder: true       # decides which sensormodel should be taken
-                                   # [true --> range_finder; false --> Odom]
+                                   # [true --> range_finder; false --> Odom (In paper -> appraoch #3)]
 
 clearingPoses: true                # poses werden vom letzen time-step in rviz gelöscht
 
@@ -27,12 +27,12 @@ initialTH: 0.0
 
 # ------------ Motion Models ------------
 # --- sample_motion_model_velocity ---
-alpha_1: 0.2 # 0.6  # 0.2
-alpha_2: 0.8 # 0.8  # 0.8
-alpha_3: 0.2 # 0.6  # 0.2
-alpha_4: 0.8 # 0.8  # 0.8
-alpha_5: 0.4 # 0.5  # 0.2
-alpha_6: 0.6 # 0.7  # 0.6
+alpha_1: 0.2 # 2.8
+alpha_2: 0.8 # 3.4
+alpha_3: 0.2 # 2.8
+alpha_4: 0.8 # 3.4
+alpha_5: 0.4 # 3.1
+alpha_6: 0.6 # 3.2
 
 # --- sample_motion_model_odometry ---
 alpha_odom_1: 2.5
@@ -48,9 +48,9 @@ jederWieVielteBeam: 20     # gibt an jeder wie vielte Beam des Scanners verwende
 
 zHit: 0.5
 zShort: 0.05
-zMax: 10.0
+zMax: 3.5
 zRand: 0.01
-sigmaHit: 0.2 # 0.4 auch sehr gut aber relativ aggressiv
+sigmaHit: 0.2 # 0.4 auch gut aber relativ aggressiv
               # 0.2 wie bei amcl
               # 0.8 nicht sehr aggressiv
 
