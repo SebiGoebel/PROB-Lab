@@ -7,10 +7,13 @@
 // command für das publishen eines goals
 // rostopic pub /move_base_simple/goal geometry_msgs/PoseStamped '{header: {stamp: now, frame_id: "map"}, pose: {position: {x: 3.0, y: 0.5, z: 0.0}, orientation: {w: 1.0}}}'
 
-double th;
-double x;
-double y;
-double toleranz = 0.1;
+float th;
+float x;
+float y;
+float toleranz = 0.1;
+int anzGoals = 4;
+int wieOftGepublished = 5; // gibt an wie oft ein goal gepublished werden soll
+                           // mindestens 2 Mal --> just to be save 5 Mal
 
 void odom_callback(const nav_msgs::Odometry::ConstPtr &odom)
 {
@@ -29,32 +32,35 @@ int main(int argc, char **argv)
 
     ros::Rate loop_rate(10); // publishen mit 10 Hz
 
-    double goals[4][3] = {{3, 0.5, M_PI / 2}, {3, 4.5, M_PI}, {1, 4.5, -M_PI / 2}, {1, 2, -M_PI / 2}};
-
-    // umrechnung in quaternionen //roll, pitch == 0
-    // double qx = 0;
-    // double qy = 0;
-    // double qz = sin(yaw/2);
-    // double qw = cos(yaw/2);
+    float goals[anzGoals][3] = {
+            //{3, 0.5,  M_PI / 2},
+            {3, 1,  M_PI / 2},
+            //{3, 4,  M_PI},
+            {3, 4,  M_PI / 2},
+            {1, 4, -M_PI / 2},
+            {1,   2, -M_PI / 2}
+        };
 
     // int seq = 0; // brauch ich nicht (nur vollständigkeitshalber)
 
     int goal_target = 0;
 
+    // seq++; // <-- brauch ich nicht (nur vollständigkeitshalber)
+    geometry_msgs::PoseStamped msg;
+
+    // header inputs
+    // msg.header.seq = seq; // brauch ich nicht (nur vollständigkeitshalber)
+    msg.header.frame_id = "map";
+    msg.header.stamp = ros::Time::now();
+
+    // initialisieren
+    msg.pose = geometry_msgs::Pose();
+    msg.pose.orientation = geometry_msgs::Quaternion();
+
+    int counter = 0;
+
     while (ros::ok())
     {
-        // seq++; // <-- brauch ich nicht (nur vollständigkeitshalber)
-        geometry_msgs::PoseStamped msg;
-
-        // header inputs
-        // msg.header.seq = seq; // brauch ich nicht (nur vollständigkeitshalber)
-        msg.header.frame_id = "map";
-        msg.header.stamp = ros::Time::now();
-
-        // initialising
-        msg.pose = geometry_msgs::Pose();
-        msg.pose.orientation = geometry_msgs::Quaternion();
-
         // pose
         msg.pose.position.x = goals[goal_target][0];
         msg.pose.position.y = goals[goal_target][1];
@@ -67,27 +73,33 @@ int main(int argc, char **argv)
         msg.pose.orientation.w = cos(goals[goal_target][2] / 2);
 
         // Ausgabe des goals
-        double th_grad = goals[goal_target][2] / M_PI * 180;
+        float th_grad = goals[goal_target][2] / M_PI * 180;
         ROS_INFO("Goal %d: X: %f, Y: %f, TH(grad): %f", goal_target, msg.pose.position.x, msg.pose.position.y, th_grad);
 
-        goal_pub.publish(msg);
+        // damit nicht die ganze zeit gepublished wird
+        if(counter < wieOftGepublished){
+            goal_pub.publish(msg);
+            std::cout << "Counter: " << counter << std::endl;
+            counter++;
+        }
         
         // entfernung zum goal
-        double dX = goals[goal_target][0] - x;
-        double dY = goals[goal_target][1] - y;
-        double dTh = goals[goal_target][2] - th;
+        float dX = goals[goal_target][0] - x;
+        float dY = goals[goal_target][1] - y;
+        float dTh = goals[goal_target][2] - th;
 
         // wenn in toleranzbereich --> nächstes goal
-        if (dX > -toleranz && dX < toleranz)
+        if (-toleranz < dX && dX < toleranz)
         {
-            if (dY > -toleranz && dY < toleranz)
+            if (-toleranz < dY && dY < toleranz)
             {
-                if (dTh > -toleranz * 2 && dTh < toleranz * 2)
+                if ((-toleranz * 3) < dTh && dTh < (toleranz * 3))
                 {
                     goal_target++;
-                    if (goal_target > 3)
+                    counter = 0;
+                    if (goal_target > (anzGoals-1))
                     {
-                        goal_target = 3;
+                        goal_target = (anzGoals-1);
                         std::cout << "\n\nlast goal reached !!!\n" << std::endl;
                         return 0;
                     }

@@ -73,5 +73,12 @@
     <!-- eigener particle filter -->
     <node type="particle_filter" name="particle_filter" pkg="problab_goebel" />
 
+    <!-- delay damit alles gestartet wird und dann erst der goal publisher beginnt -->
+    <!-- https://answers.ros.org/question/233353/set-delay-between-starting-nodes-within-launch-file/ -->
+    <arg name="node_start_delay" default="5.0" />
+    
+    <!-- starte den goal publisher -->
+    <node type="goal_pub" name="goal_publisher" pkg="problab_goebel" launch-prefix="bash -c 'sleep $(arg node_start_delay); $0 $@' " />
+
     
 </launch>

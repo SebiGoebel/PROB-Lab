@@ -15,6 +15,9 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   std_msgs
   tf
+  move_base_msgs
+  actionlib_msgs
+  #move_turtlebot
 )
 
 ## System dependencies are found with CMake's conventions
@@ -224,6 +227,9 @@ target_link_libraries(particle_filter_Cmd_Odom ${catkin_LIBRARIES})
 add_executable(goal_pub src/goal_pub.cpp)
 target_link_libraries(goal_pub ${catkin_LIBRARIES})
 #add_dependencies(goal_pub problab_goebel_generate_messages_cpp)
+
+add_executable(goal_pub_v2 src/goal_pub_v2.cpp)
+target_link_libraries(goal_pub_v2 ${catkin_LIBRARIES})
 
 add_executable(linear_control src/linear_control.cpp)
 target_link_libraries(linear_control ${catkin_LIBRARIES})
