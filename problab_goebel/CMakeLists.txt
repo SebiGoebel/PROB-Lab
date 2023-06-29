@@ -15,9 +15,6 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   std_msgs
   tf
-  move_base_msgs
-  actionlib_msgs
-  #move_turtlebot
 )
 
 ## System dependencies are found with CMake's conventions
@@ -212,28 +209,15 @@ include_directories(
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
-add_executable(testNode src/testNode.cpp)
-target_link_libraries(testNode ${catkin_LIBRARIES})
-
-add_executable(test2Node src/test2Node.cpp)
-target_link_libraries(test2Node ${catkin_LIBRARIES})
-
-add_executable(test3Node src/test3Node.cpp)
-target_link_libraries(test3Node ${catkin_LIBRARIES})
-
 add_executable(particle_filter_Cmd_Odom src/particle_filter_Cmd_Odom.cpp)
 target_link_libraries(particle_filter_Cmd_Odom ${catkin_LIBRARIES})
+
+add_executable(particle_filter_backup src/particle_filter_backup.cpp)
+target_link_libraries(particle_filter_backup ${catkin_LIBRARIES})
 
 add_executable(goal_pub src/goal_pub.cpp)
 target_link_libraries(goal_pub ${catkin_LIBRARIES})
 #add_dependencies(goal_pub problab_goebel_generate_messages_cpp)
-
-add_executable(goal_pub_v2 src/goal_pub_v2.cpp)
-target_link_libraries(goal_pub_v2 ${catkin_LIBRARIES})
-
-add_executable(linear_control src/linear_control.cpp)
-target_link_libraries(linear_control ${catkin_LIBRARIES})
-#add_dependencies(linear_control problab_goebel_generate_messages_cpp)
 
 add_executable(particle_filter src/particle_filter.cpp)
 target_link_libraries(particle_filter ${catkin_LIBRARIES})

@@ -15,9 +15,7 @@
 #include <yaml-cpp/yaml.h>
 #include <iostream>
 
-//Hyperparameter
-
-// ------------ struct -------------
+// ================= STRUCTS =================
 
 struct Hyperparameter{
     int anzSamples;
@@ -45,6 +43,7 @@ struct Hyperparameter{
     double alpha_odom_3;
     double alpha_odom_4;
     // --- sensor Models ---
+    //likelyhood_range_finder_model
     double laserScannerPositionX;
     double laserScannerPositionY;
     int jederWieVielteBeam;
@@ -55,71 +54,6 @@ struct Hyperparameter{
     double sigmaHit;
 };
 
-//Map
-#define sizeOfMap 320 // 320 * 320
-
-
-// ================= random distributions =================
-
-double random_value(double min, double max){
-    // Zufallszahlengenerator
-    std::random_device rd;
-    std::mt19937 generator(rd());
-
-    // Gleichverteilung zw. min- und max-value
-    std::uniform_real_distribution<double> distribution(min, max);
-
-    // Generiere eine Zufallszahl
-    double randomVal = distribution(generator);
-
-    return randomVal;
-}
-
-double sample_normal_distribution(double b){ // b -> variance
-
-    double helpervar = 0.0;
-
-    for(int i = 0; i < 12; i++){
-        helpervar += random_value(-1.0, 1.0);
-    }
-
-    double result = b / 6 * helpervar;
-
-    return result;
-}
-
-double sample_triangular_distribution(double b){ // b -> variance
-    double helpervar1 = random_value(-1.0, 1.0);
-    double helpervar2 = random_value(-1.0, 1.0);
-    return b * helpervar1 * helpervar2;
-}
-
-double sampling(double variance, bool distribution){
-    double randNum;
-    if(distribution == true){
-        randNum = sample_normal_distribution(variance);
-    }
-    if(distribution == false){
-        randNum = sample_triangular_distribution(variance);
-    }
-    return randNum;
-}
-
-double probabilityDist(double dist, double sigma){
-
-    // ACHTUNG: simga = σ²
-    
-    double mean = 0.0;
-
-    double exponent = -(pow(dist - mean, 2) / (2 * sigma));
-    double prob = (1 / (sqrt(2 * M_PI * sigma))) * exp(exponent);
-
-    return prob;
-}
-
-// ================= STRUCTS =================
-
-//Sample
 struct Sample
 {
     double x;
@@ -136,24 +70,26 @@ struct U_t{
 struct Z_t{
     double laserMaxRange;
     double laserMinRange;
-
-    //double laserScan[360];
     std::vector<float> laserScan;
 };
 
 struct Odom{
+    // pose current time step
     double x;
     double y;
     double th;
 
+    // pose last time step
     double x_d1;
     double y_d1;
     double th_d1;
 
-    double x_vel;
-    double th_vel;
+    // velocities
+    double x_vel; // => v
+    double th_vel;// => ω
 };
 
+//Mittelpunkte der occupied cells
 struct RayCastingPoint{
     double x;
     double y;
@@ -164,11 +100,75 @@ struct Map{
     double resolution;
     int height;
     int width;
-    RayCastingPoint ray_castingPoints_2D[sizeOfMap][sizeOfMap];
     std::vector<RayCastingPoint> ray_castingPoints; // vector für alle Zellenmittelpunkte
 };
 
-// ================= Sample --> geometry_msgs::Pose =================
+// ================================================= FUNCTIONS =================================================
+
+// ================= random distributions =================
+
+//nach Pseudocode --> Thrun S.98 Table 5.4 (Table-beschreibung)
+double random_value(double min, double max){
+    // Zufallszahlengenerator
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    // Gleichverteilung zw. min- und max-value
+    std::uniform_real_distribution<double> distribution(min, max);
+
+    // Generiere eine Zufallszahl
+    double randomVal = distribution(generator);
+
+    return randomVal;
+}
+
+//nach Pseudocode --> Thrun S.98 Table 5.4 (Lines: 1 bis 2)
+double sample_normal_distribution(double b){ // b -> variance
+    double helpervar = 0.0;
+    
+    for(int i = 0; i < 12; i++){
+        helpervar += random_value(-1.0, 1.0);
+    }
+    
+    double result = b / 6 * helpervar;
+
+    return result;
+}
+
+//nach Pseudocode --> Thrun S.98 Table 5.4 (Lines: 3 bis 4)
+double sample_triangular_distribution(double b){ // b -> variance
+    double helpervar1 = random_value(-1.0, 1.0);
+    double helpervar2 = random_value(-1.0, 1.0);
+    return b * helpervar1 * helpervar2;
+}
+
+// sampling Methode um entweder eine normal_distribution aufzurufen oder eine triangular distribution
+double sampling(double variance, bool distribution){
+    double randNum;
+    if(distribution == true){
+        randNum = sample_normal_distribution(variance);
+    }
+    if(distribution == false){
+        randNum = sample_triangular_distribution(variance);
+    }
+    return randNum;
+}
+
+// Normalverteilung mit einstellbarer Varianz und abweichung x (dist) für range_finder
+// Formel nach Equation 1 im Paper
+double probabilityDist(double dist, double sigma){
+    // ACHTUNG: simga = σ²
+    double mean = 0.0;
+
+    double exponent = -(pow(dist - mean, 2) / (2 * sigma));
+    double prob = (1 / (sqrt(2 * M_PI * sigma))) * exp(exponent);
+
+    return prob;
+}
+
+// ================= Converting Functions =================
+
+// ------------ Sample --> geometry_msgs::Pose ------------
 
 geometry_msgs::Pose sample2Pose(Sample sample){
     geometry_msgs::Pose pose;
@@ -184,7 +184,7 @@ geometry_msgs::Pose sample2Pose(Sample sample){
     return pose;
 }
 
-// ================= ros::Time --> double =================
+// ------------ ros::Time --> double ------------
 
 double convertingTime2Double(ros::Time time){
     double time_in_double = time.toSec(); // converting ros::Time to a double value in seconds
@@ -197,31 +197,76 @@ class Filter
 {
 public:
     // Konstruktor
+    /*
+        The Filter konstruktor setzt initial werte auf wichtige variablen.
+        Er übernimmt auch die parameter die von "param/hyperparameter.yaml" kommen
+        Es setzt auch die initial posen am anfang:
+            hier ist es möglich alle initial posen normal zu verteilen
+            oder alle posen auf die initial werte des Roboters zu setzten [0.5, 0.5, 0]
+        alle samples sind am anfang gleich gewichtet --> 1/M
+    */
     Filter(Hyperparameter defaultParameters);
 
     // --- Methoden ---
+    // Getter und Setter befinden sich innerhalb der Klasse
     // größere Methoden die auserhalb der Klasse geschrieben worden sind (--> mit Filter::Methode)
     geometry_msgs::Pose getSampleFromSample_old_anStelle(int i);
     
-    // Motion Models
-    Sample sample_motion_model_motion_command(Sample sample_old);
-    Sample sample_motion_model_odometry(Sample sample_old);
+    // --------- Motion Models ---------
+    /*
+        das Motion Model wird mit: "motionModelOdom" gewählt [true --> Odom; false --> Motion Command]
+
+        die folgenden 2 Methoden sind unterschiedliche motion models die den Pseudocodes von Thrun folgen
+        sample_motion_model_motion_command --> verwendet den motion command um die samples zu bewegen -> (nach Thrun S.98)
+        sample_motion_model_odometry       --> verwendet die Odometry um die samples zu bewegen       -> (nach Thrun S.110)
+
+        leider gibt es beim Motion model Odometry zwei Probleme:
+            - dieses Motion Model funktioniert nur jedes 3. Mal
+            - bei einem funktionierenden Versuch bewegen sich die Samples zwar in die richtige Richtung, jedoch ist die Bewegung viel kleiner als die des Roboters
+
+        da ich dieses Problm nicht lösen konnte habe ich das sample_motion_model_odometry auch nicht im Paper beschrieben,
+        wollte es jedoch nicht aus meinem Code löschen falls ich mir das Problem im Sommer nochmal anschaue oder Sie Feedback für mich haben
+        --> sample_motion_model_motion_command funktioniert einwandfrei
+            (optimale Hyperparameter zum testen siehe Paper)
+    */
+    Sample sample_motion_model_motion_command(Sample sample_old); //nach Pseudocode Thrun S.98
+    Sample sample_motion_model_odometry(Sample sample_old);       //nach Pseudocode Thrun S.110
     
-    // Sensor Models
+    // --------- Sensor Models ---------
+    /*
+        das Sensor Model wird mit: "sensorModelRangeFinder" gewählt [true --> range_finder; false --> Odom (In paper -> appraoch #3)]
+
+        die folgenden Methoden sind measurement models:
+        - likelihood_field_range_finder_model verwendet den 2D laser scanner um die samples zu gewichten (nach Thrun S.143)
+        - updateOdomSample und odom_vel_sensor_model_odomSample verwenden die Odometry um die samples zu gewichten (dabei handelt es sich um den approach #3)
+
+        bei den anderen beiden models handelt es sich um approach #1 und #2:
+        - odom_vel_sensor_model_linearer_regler
+        - odom_vel_sensor_model
+
+        die Probleme von den beiden Models sind im Paper beschrieben --> dadurch dass sie nur funktionieren wenn alle samples im robot origin [0.5, 0.5, 0] starten,
+        habe ich sie im Code nur vorständigkeitshalber gelassen
+        ACHTUNG: die approaches #1 und #2 kann man nicht mit den einstellungen von "param/hyperparameter.yaml" aufrufen !!!
+    */
     double likelihood_field_range_finder_model(Sample sample);
-    
-    double odom_vel_sensor_model_linearer_regler(Sample predictedSample, Sample oldSample); // In paper --> odom appraoch #1 (works only when all samples spawn at the origin)
+    double odom_vel_sensor_model_linearer_regler(Sample predictedSample, Sample oldSample); // In paper --> odom approach #1 (works only when all samples spawn at the origin) (nach Thrun S.143)
+    double odom_vel_sensor_model(Sample predictedSample, Sample oldSample);                 // In paper --> odom approach #2 (works only when all samples spawn at the origin)
+    void updateOdomSample();                                                                // In paper --> odom approach #3
+    double odom_vel_sensor_model_odomSample(Sample predictedSample);                        // In paper --> odom approach #3
 
-    double odom_vel_sensor_model(Sample predictedSample, Sample oldSample);                 // In paper --> odom appraoch #2 (works only when all samples spawn at the origin)
-    
-    void updateOdomSample();                                                                // In paper --> odom appraoch #3
-    double odom_vel_sensor_model_odomSample(Sample predictedSample);                        // In paper --> odom appraoch #3
+    // --------- Resampler ---------
+    /*
+        bei low_variance_sampler hadelt es sich um den resampler nach Thrun S.86 im Kapitel 4.2.2 Importance Sampling
+        Meine Implementierung folget dem Peudocode mit dem einzigen unterschied, dass ich in der Methode noch alle Gewichtungen normiere
+    */
+    std::vector<Sample> low_variance_sampler(std::vector<Sample> predictedSamples); // (nach Thrun S.86)
 
-    // Resampler
-    std::vector<Sample> low_variance_sampler(std::vector<Sample> predictedSamples);
-
-    // Algorithm
-    void algorithmMCL();
+    // --------- Algorithm ---------
+    /*
+        Der Pariclefilter Algorithmus folgt dem Pseudocodes des MCLs nach Thrun S.200
+        Diese Methode wird in der main aufgerufen
+    */
+    void algorithmMCL(); // nach Thrun S.200
 
     // --- callback funktionen ---
     void callback_cmd_vel(const geometry_msgs::Twist::ConstPtr &cmd_vel_msg);
@@ -296,7 +341,6 @@ private:
     Hyperparameter params_;
 
     // samples
-    //Sample samples_old_[this->params_.anzSamples];
     std::vector<Sample> samples_old_;
     Sample odomSample_;
     
@@ -349,12 +393,6 @@ Filter::Filter(Hyperparameter defaultParameters){
             initialSample.weight = (double)(1.0/(double)this->params_.anzSamples); // gewichtung gleichmäßig verteilt
 
             this->samples_old_.push_back(initialSample);
-            
-            //this->samples_old_[i].x = distributionPosition(generator);
-            //this->samples_old_[i].y = distributionPosition(generator);
-            //this->samples_old_[i].th = random_value(-M_PI, M_PI);
-            ////this->samples_old_[i].th = random_value(-1.0, 1.0);
-            //this->samples_old_[i].weight = (double)(1.0/(double)this->params_.anzSamples); // gewichtung gleichmäßig verteilt
         }
     }
     else
@@ -368,7 +406,6 @@ Filter::Filter(Hyperparameter defaultParameters){
 
         for(int i = 0; i < this->params_.anzSamples; i++){
             this->samples_old_.push_back(sample_default);
-            //this->samples_old_[i] = sample_default;
         }
     }
 
@@ -390,7 +427,8 @@ geometry_msgs::Pose Filter::getSampleFromSample_old_anStelle(int i) {
 
 // ========================================== Motion Models ==========================================
 
-// für ein sample
+// Motion Model für ein sample mit Motioncommand
+// nach Pseudocode Thrun S.98
 Sample Filter::sample_motion_model_motion_command(Sample sample_old)
 {
     // preparing Input for sampling()
@@ -401,13 +439,10 @@ Sample Filter::sample_motion_model_motion_command(Sample sample_old)
     double variance2 = this->params_.alpha_3 * absV + this->params_.alpha_4 * absW;
     double variance3 = this->params_.alpha_5 * absV + this->params_.alpha_6 * absW;
     
-    // motion model
+    // including randomness with sampling()
     double v_hat = this->motion_model_.v + sampling(variance1, this->params_.normalTriangularDistribution);
     double w_hat = this->motion_model_.w + sampling(variance2, this->params_.normalTriangularDistribution);
     double th_hilf = sampling(variance3, this->params_.normalTriangularDistribution);
-
-    //std::cout << "---" << std::endl;
-    //std::cout << "test: v_hat: " << v_hat << ", w_hat: " << w_hat << ", th_hilf: " << (th_hilf*180/M_PI) << std::endl;
 
     if(w_hat == 0.0 || v_hat == 0.0 || th_hilf == 0.0){
         return sample_old;
@@ -418,24 +453,20 @@ Sample Filter::sample_motion_model_motion_command(Sample sample_old)
     double y_ = sample_old.y + ((v_hat/w_hat) * cos(sample_old.th)) - ((v_hat/w_hat) * cos(sample_old.th + w_hat * this->dt_));
     double th_ = sample_old.th + w_hat * this->dt_ + th_hilf * this->dt_;
 
-    //std::cout << "test: x_: " << x_ << ", y_: " << y_ << ", th_: " << (th_*180/M_PI) << std::endl;
-
     // speichern in Sample-struct und return
     Sample s1;
     s1.x = x_;
     s1.y = y_;
     s1.th = th_;
-    //s1.weight = 0.1835;//(double)(1.0/(double)anzSamples); // gewichtung gleichmäßig verteilt
     return s1;
 }
 
+// Motion Model für ein sample mit Odometry
+//nach Pseudocode Thrun S.110
 Sample Filter::sample_motion_model_odometry(Sample sample_old){
 
-    // Buch Seite 110
     // δ == delta
 
-    //double toleranz = 0.01;
-    //if(this->odom_.x > (initialX + toleranz) || this->odom_.x < (initialX - toleranz) || this->odom_.y > (initialY + toleranz) || this->odom_.y < (initialY - toleranz) || this->odom_.th > (initialTH + toleranz) || this->odom_.th < (initialTH - toleranz)){
     if(this->motion_model_.v > 0.1 || this->motion_model_.v < -0.1 || this->motion_model_.w > 0.1 || this->motion_model_.w < -0.1){
 
         double delta_rot_1 = atan2((this->odom_.y - this->odom_.y_d1), (this->odom_.x - this->odom_.x_d1)) - this->odom_.th_d1;
@@ -467,8 +498,11 @@ Sample Filter::sample_motion_model_odometry(Sample sample_old){
     }
 }
 
-// ========================================== Sensor Models ==========================================
+// ========================================== Measurement Models ==========================================
 
+// Measurement Model mit 2D laser scanner
+// nach Thrun S.143
+// Auswählbar mit sensorModelRangeFinder => true
 double Filter::likelihood_field_range_finder_model(Sample sample)
 {
     // wenn keine bewegung alles particles
@@ -496,8 +530,6 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
             double y_ztk = sample.y + this->params_.laserScannerPositionY * cos(sample.th) + this->params_.laserScannerPositionX * sin(sample.th) + this->sensor_model_.laserScan[i] * sin(sample.th + angleInRad);
 
             // Zeile 7 --> dist²
-            // start = maxDistanze = Mapdiagonale
-            //double minDist = pow(this->map_.height * this->map_.resolution, 2) + pow(this->map_.width * this->map_.resolution, 2);
             double minDist_2 = this->sensor_model_.laserMaxRange;
 
             for(int j = 0; j < this->map_.ray_castingPoints.size(); j++){
@@ -516,14 +548,16 @@ double Filter::likelihood_field_range_finder_model(Sample sample)
     return probability;
 }
 
-// ---------- odometrie sensor models ----------
+// ---------- odometry measurement models ----------
 
+// approach #1 mit linearer regelung von Siegward 2004
+// genauere beschreibung siehe Paper
+// ACHTUNG: funktioniert nur wenn alle Samples im robot origin [0.5, 0.5, 0] starten !!! (deshalb nicht auswählbar von .yaml)
 double Filter::odom_vel_sensor_model_linearer_regler(Sample predictedSample, Sample oldSample){
 
     double gewichtung = 0.0;
 
     if(this->motion_model_.v > 0.1 || this->motion_model_.v < -0.1 || this->motion_model_.w > 0.1 || this->motion_model_.w < -0.1){
-        //double gewichtung = (double)(1.0/(double)anzSamples); // starten mit allen Samples gleichgewichtet
         // Regelparameter nach Siegwart (2004)
         double kp = 0.4;
         double ka = 1;
@@ -555,7 +589,7 @@ double Filter::odom_vel_sensor_model_linearer_regler(Sample predictedSample, Sam
             beta = beta + 2 * M_PI;
         }
 
-        // berechnnen de
+        // berechnnen der vels
         double v_regler = kp * p;
         double w_regler = ka * alpha + kb * beta;
 
@@ -578,6 +612,9 @@ double Filter::odom_vel_sensor_model_linearer_regler(Sample predictedSample, Sam
     return gewichtung;
 }
 
+// approach #2 mit Odometry
+// genauere beschreibung siehe Paper
+// ACHTUNG: funktioniert nur wenn alle Samples im robot origin [0.5, 0.5, 0] starten !!! (deshalb nicht auswählbar von .yaml)
 double Filter::odom_vel_sensor_model(Sample predictedSample, Sample oldSample){
     double gewichtung = 0.0;
 
@@ -591,6 +628,7 @@ double Filter::odom_vel_sensor_model(Sample predictedSample, Sample oldSample){
         double y_berechnet = oldSample.y + ((v_odom/w_odom) * cos(oldSample.th)) - ((v_odom/w_odom) * cos(oldSample.th + w_odom * this->dt_));
         double th_berechnet = oldSample.th + w_odom * this->dt_;
 
+        // berechnen der Differenz und gewichten
         double diffX = predictedSample.x - x_berechnet;
         double diffY = predictedSample.y - y_berechnet;
         double diffTh = predictedSample.th - th_berechnet;
@@ -610,6 +648,10 @@ double Filter::odom_vel_sensor_model(Sample predictedSample, Sample oldSample){
     return gewichtung;
 }
 
+// approach #3 mit Odometry-Sample
+// genauere beschreibung siehe Paper
+// Auswählbar mit sensorModelRangeFinder => false
+// funktion für das updaten des odom-samples
 void Filter::updateOdomSample(){
     double v_odom = this->odom_.x_vel;
     double w_odom = this->odom_.th_vel;
@@ -622,6 +664,7 @@ void Filter::updateOdomSample(){
     }
 }
 
+// motion model -> vergleicht die samples mit odom-sample
 double Filter::odom_vel_sensor_model_odomSample(Sample predictedSample){
     double gewichtung = 0.0;
 
@@ -648,12 +691,12 @@ double Filter::odom_vel_sensor_model_odomSample(Sample predictedSample){
 
 // ========================================== resampling ==========================================
 
+// nach Thrun S.86
 std::vector<Sample> Filter::low_variance_sampler(std::vector<Sample> predictedSamples) {
     // empty set of samples
     std::vector<Sample> correctedSamples(this->params_.anzSamples);
 
     // random value
-    //double r = random_value(0.0, 1.0/anzSamples);
     double r = random_value(0.0, (double)(1.0/(double)this->params_.anzSamples));
 
     // Gewichte Normalisieren
@@ -674,7 +717,6 @@ std::vector<Sample> Filter::low_variance_sampler(std::vector<Sample> predictedSa
 
     // draw with replacement
     for(int m = 0; m < this->params_.anzSamples; m++){
-        //double u = r + m * (1/anzSamples);
         double u = r + ((double) m * (double)(1.0/(double)this->params_.anzSamples));
         while(u > c){
             i = i + 1;
@@ -689,27 +731,29 @@ std::vector<Sample> Filter::low_variance_sampler(std::vector<Sample> predictedSa
 
 // ========================================== Monte Carlo Localization Algorithm ==========================================
 
+// eigentlicher Algorithmus welcher models und resampling aufruft
+// nach Thrun S.200
 void Filter::algorithmMCL(){
     std::vector<Sample> samples_predicted(this->params_.anzSamples); // for sampling and weighting
     std::vector<Sample> samples_new(this->params_.anzSamples);      // for resampling
 
-    updateOdomSample();
+    updateOdomSample(); // Odom approach #3
     for(int i = 0; i < this->params_.anzSamples; i++){
         if(this->params_.motionModelOdom){
-            samples_predicted[i] = sample_motion_model_odometry(this->samples_old_[i]);
+            samples_predicted[i] = sample_motion_model_odometry(this->samples_old_[i]);              // Motion Model mit Odometry
         }
         else
         {
-            samples_predicted[i] = sample_motion_model_motion_command(this->samples_old_[i]);
+            samples_predicted[i] = sample_motion_model_motion_command(this->samples_old_[i]);        // Motion Model mit Motion command
         }
         if(this->params_.sensorModelRangeFinder){
-            samples_predicted[i].weight = likelihood_field_range_finder_model(samples_predicted[i]);
+            samples_predicted[i].weight = likelihood_field_range_finder_model(samples_predicted[i]); // Measurement Model mit laser scanner
         }
         else
         {
-            samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);
-            //samples_predicted[i].weight = odom_vel_sensor_model(samples_predicted[i], this->samples_old_[i]);
-            //samples_predicted[i].weight = odom_vel_sensor_model_linearer_regler(samples_predicted[i], this->samples_old_[i]);
+            samples_predicted[i].weight = odom_vel_sensor_model_odomSample(samples_predicted[i]);                               // Odom approach #3
+            //samples_predicted[i].weight = odom_vel_sensor_model(samples_predicted[i], this->samples_old_[i]);                 // Odom appraoch #2
+            //samples_predicted[i].weight = odom_vel_sensor_model_linearer_regler(samples_predicted[i], this->samples_old_[i]); // Odom appraoch #1
         }
     }
 
@@ -789,15 +833,15 @@ void Filter::callback_grid(const nav_msgs::OccupancyGrid::ConstPtr& grid_msg){
     this->map_.height = grid_msg->info.height;
     this->map_.width = grid_msg->info.width;
 
-    // Ursprung [0, 0] --> liegt im Mittelpunkt der Map --> [160, 160] = sizeOfMap / 2 = 8m / 0.05res
+    // Ursprung [0, 0] --> liegt im Mittelpunkt der Map --> [160, 160] = [this->map_.height / 2, this->map_.width / 2] = [8m / 0.05res, 8m / 0.05res]
     // (8m = x-Richtung, 8m = -x-Richtung, 8m = y-Richtung, 8m = -y-Richtung)
     double ursprung_x = (this->map_.width * this->map_.resolution / 2);
     double ursprung_y = (this->map_.height * this->map_.resolution / 2);
 
     // kopieren des occupancy grids in mein 2D Array
-    for(int zeile = 0; zeile < sizeOfMap; zeile++){
-        for(int spalte = 0; spalte < sizeOfMap; spalte++){
-            int index = zeile * sizeOfMap + spalte;
+    for(int zeile = 0; zeile < this->map_.height; zeile++){
+        for(int spalte = 0; spalte < this->map_.width; spalte++){
+            int index = zeile * this->map_.height + spalte;
 
             // befüllen des rayray_castingPoints für alle Zellenmittelpunkte wo nicht unbekannt
             if(grid_msg->data[index] != -1){
@@ -862,8 +906,8 @@ int main(int argc, char **argv)
 
     // subscribers
     ros::Subscriber sub_cmd_vel = n.subscribe("cmd_vel", 1000, &Filter::callback_cmd_vel, &filter);
-    //ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom, &filter);
-    ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom_motion, &filter);
+    //ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom, &filter);        // speichern nur aktuelle Odometrie
+    ros::Subscriber sub_odom = n.subscribe("odom", 1000, &Filter::callback_odom_motion, &filter);   // speichert Odometrie vom aktuellen und letztem time step
     ros::Subscriber sub_laser = n.subscribe("scan", 1000, &Filter::callback_laser, &filter);
     ros::Subscriber sub_occupancy_grid = n.subscribe("map", 1000, &Filter::callback_grid, &filter);
 
@@ -916,6 +960,8 @@ int main(int argc, char **argv)
         std::cout << "          V: " << filter.getU_t().v << ", W: " << filter.getU_t().w << std::endl;
         std::cout << "laserMax: " << filter.getZ_t().laserMaxRange << std::endl;
         std::cout << "laserMin: " << filter.getZ_t().laserMinRange << std::endl;
+        std::cout << "Map width: " << filter.getMap().width << std::endl;
+        std::cout << "Map height: " << filter.getMap().height << std::endl;
 
         std::cout << "---" << std::endl;
         std::cout << std::endl;

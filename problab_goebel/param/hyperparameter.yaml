@@ -35,10 +35,10 @@ alpha_5: 0.4 # 3.1
 alpha_6: 0.6 # 3.2
 
 # --- sample_motion_model_odometry ---
-alpha_odom_1: 2.5
-alpha_odom_2: 2.5
-alpha_odom_3: 2.5
-alpha_odom_4: 2.5
+alpha_odom_1: 0.6
+alpha_odom_2: 0.4
+alpha_odom_3: 0.5
+alpha_odom_4: 0.6
 
 # ------------ Sensor Models ------------
 laserScannerPositionX: 0.0 # Position des Laserscanners am Roboter in x-Richtung

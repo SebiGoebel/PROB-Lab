@@ -41,15 +41,11 @@ int main(int argc, char **argv)
             {1,   2, -M_PI / 2}
         };
 
-    // int seq = 0; // brauch ich nicht (nur vollständigkeitshalber)
-
     int goal_target = 0;
 
-    // seq++; // <-- brauch ich nicht (nur vollständigkeitshalber)
     geometry_msgs::PoseStamped msg;
 
     // header inputs
-    // msg.header.seq = seq; // brauch ich nicht (nur vollständigkeitshalber)
     msg.header.frame_id = "map";
     msg.header.stamp = ros::Time::now();
 
