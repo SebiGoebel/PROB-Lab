@@ -7,9 +7,9 @@ nurMotionModel: false              # wenn true --> zeigt nur das ausgewählte Mo
                                    # ACHTUNG: wenn true --> es wird nicht resamplet
 
 motionModelOdom: false             # decides which motionmodel should be taken
-                                   # [true --> Odom; false --> Motion Command]
+                                   # [true --> Odom; false --> Motion Command]    ACHTUNG: Problem bei Motion Model Odometry !!! --> funktioniert nicht einwandfrei (Problem beschreibung unten ab Zeile 58 und in Klasse von particle_filter.cpp)
 
-normalTriangularDistribution: true # decides which distribution should be taken
+normalTriangularDistribution: true # decides which distribution should be taken (!no significant change!)
                                    # [true --> normal distribution; false --> triangular distribution]
 
 initialPosesNormalverteilt: true   # decides if the initial poses should be distributed
@@ -41,8 +41,8 @@ alpha_odom_3: 0.5
 alpha_odom_4: 0.6
 
 # ------------ Sensor Models ------------
-laserScannerPositionX: 0.0 # Position des Laserscanners am Roboter in x-Richtung
-laserScannerPositionY: 0.0 # Position des Laserscanners am Roboter in y-Richtung
+laserScannerPositionX: 0.0 # Position des Laserscanners am Roboter in x-Richtung (bei Turtlebot Burger -> 0.0)
+laserScannerPositionY: 0.0 # Position des Laserscanners am Roboter in y-Richtung (bei Turtlebot Burger -> 0.0)
 
 jederWieVielteBeam: 20     # gibt an jeder wie vielte Beam des Scanners verwendet werden soll 
 
@@ -54,15 +54,13 @@ sigmaHit: 0.2 # 0.4 auch gut aber relativ aggressiv
               # 0.2 wie bei amcl
               # 0.8 nicht sehr aggressiv
 
-#AMCL Argumente
-#<remap from="scan"                      to="/scan"/>
-#    <param name="laser_max_range"           value="3.5"/>
-#    <param name="laser_max_beams"           value="180"/>
-#    <param name="laser_z_hit"               value="0.5"/>
-#    <param name="laser_z_short"             value="0.05"/>
-#    <param name="laser_z_max"               value="0.05"/>
-#    <param name="laser_z_rand"              value="0.5"/>
-#    <param name="laser_sigma_hit"           value="0.2"/>
-#    <param name="laser_lambda_short"        value="0.1"/>
-#    <param name="laser_likelihood_max_dist" value="2.0"/>
-#    <param name="laser_model_type"          value="likelihood_field"/>
+
+# !!! Problembeschreibung Motion Model Odometry: !!!
+# leider gibt es beim Motion model Odometry zwei Probleme:
+#   - dieses Motion Model funktioniert nur jedes 3. Mal
+#   - bei einem funktionierenden Versuch bewegen sich die Samples zwar in die richtige Richtung, jedoch ist die Bewegung viel kleiner als die des Roboters
+#
+#   da ich dieses Problm nicht lösen konnte habe ich das sample_motion_model_odometry auch nicht im Paper beschrieben,
+#   wollte es jedoch nicht aus meinem Code löschen falls ich mir das Problem im Sommer nochmal anschaue oder Sie Feedback für mich haben
+#   --> sample_motion_model_motion_command funktioniert einwandfrei
+#       (optimale Hyperparameter zum testen siehe Paper)

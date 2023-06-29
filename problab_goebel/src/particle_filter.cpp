@@ -421,6 +421,8 @@ Filter::Filter(Hyperparameter defaultParameters){
     std::cout << "initials set" << std::endl;
 }
 
+// ==================================================== Methoden ====================================================
+
 geometry_msgs::Pose Filter::getSampleFromSample_old_anStelle(int i) {
     return sample2Pose(this->samples_old_[i]);
 }
@@ -481,9 +483,9 @@ Sample Filter::sample_motion_model_odometry(Sample sample_old){
         double delta_trans_hat = delta_trans - sampling(variance2, this->params_.normalTriangularDistribution);
         double delta_rot_2_hat = delta_rot_2 - sampling(variance3, this->params_.normalTriangularDistribution);
 
-        double x_ = sample_old.x + 2.5 * delta_trans_hat * cos(sample_old.th + delta_rot_1_hat);
-        double y_ = sample_old.y + 2.5 * delta_trans_hat * sin(sample_old.th + delta_rot_1_hat);
-        double th_ = sample_old.th + 1.5 * delta_rot_1_hat + 1.5 * delta_rot_2_hat;
+        double x_ = sample_old.x + delta_trans_hat * cos(sample_old.th + delta_rot_1_hat);
+        double y_ = sample_old.y + delta_trans_hat * sin(sample_old.th + delta_rot_1_hat);
+        double th_ = sample_old.th + delta_rot_1_hat + delta_rot_2_hat;
 
         // speichern in Sample-struct und return
         Sample s1;

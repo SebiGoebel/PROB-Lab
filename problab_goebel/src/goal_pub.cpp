@@ -34,9 +34,9 @@ int main(int argc, char **argv)
 
     float goals[anzGoals][3] = {
             //{3, 0.5,  M_PI / 2},
-            {3, 1,  M_PI / 2},
+            {5, 1,  M_PI / 2},
             //{3, 4,  M_PI},
-            {3, 4,  M_PI / 2},
+            {5, 4,  M_PI / 2},
             {1, 4, -M_PI / 2},
             {1,   2, -M_PI / 2}
         };
